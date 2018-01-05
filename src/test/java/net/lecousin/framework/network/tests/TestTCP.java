@@ -1,0 +1,211 @@
+package net.lecousin.framework.network.tests;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedList;
+
+import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.io.buffering.ByteArrayIO;
+import net.lecousin.framework.network.client.SSLClient;
+import net.lecousin.framework.network.client.TCPClient;
+import net.lecousin.framework.network.server.TCPServer;
+import net.lecousin.framework.network.server.TCPServerClient;
+import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
+import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.test.AbstractNetworkTest;
+
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+public class TestTCP extends AbstractNetworkTest {
+
+	private static TCPServer server;
+	private static TCPServer serverSSL;
+	
+	public static class TestProtocol implements ServerProtocol {
+
+		@Override
+		public void startProtocol(TCPServerClient client) {
+			client.send(ByteBuffer.wrap(new String("Welcome\n").getBytes(StandardCharsets.US_ASCII)));
+			client.setAttribute("welcome", Boolean.TRUE);
+			try { client.waitForData(10000); }
+			catch (ClosedChannelException e) {
+				e.printStackTrace(System.err);
+			}
+		}
+
+		@Override
+		public int getInputBufferSize() {
+			return 1024;
+		}
+
+		@Override
+		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+			System.out.println("Received from client: " + data.remaining());
+			new Task.Cpu.FromRunnable("Handling client request", Task.PRIORITY_NORMAL, () -> {
+				while (data.hasRemaining()) {
+					StringBuilder msg;
+					if (!client.hasAttribute("reading")) {
+						msg = new StringBuilder();
+						client.setAttribute("reading", msg);
+					} else
+						msg = (StringBuilder)client.getAttribute("reading");
+					byte b = data.get();
+					if (b == '\n') {
+						String s = msg.toString();
+						if (!s.startsWith("I'm ")) {
+							client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
+							client.close();
+							break;
+						}
+						client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
+						client.removeAttribute("reading");
+						continue;
+					}
+					msg.append((char)b);
+				}
+				onbufferavailable.run();
+				try { client.waitForData(10000); }
+				catch (ClosedChannelException e) {}
+			}).start();
+			return false;
+		}
+
+		@Override
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+			LinkedList<ByteBuffer> list = new LinkedList<>();
+			list.add(data);
+			return list;
+		}
+		
+	}
+	
+	@BeforeClass
+	public static void launchTCPServer() throws Exception {
+		server = new TCPServer();
+		server.setProtocol(new TestProtocol());
+		server.bind(new InetSocketAddress("localhost", 9999), 0);
+		serverSSL = new TCPServer();
+		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
+		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0);
+	}
+	
+	@AfterClass
+	public static void stopTCPServer() {
+		server.close();
+		serverSSL.close();
+	}
+	
+	@Test(timeout=30000)
+	public void testServer() throws Exception {
+		Socket s = new Socket("localhost", 9999);
+		expect(s, "Welcome");
+		send(s, "I'm Tester");
+		expect(s, "Hello Tester");
+		s.close();
+		s = new Socket("localhost", 9999);
+		expect(s, "Welcome");
+		send(s, "Hello");
+		expect(s, "I don't understand you");
+		s.close();
+	}
+	
+	@Test(timeout=30000)
+	public void testSSLServer() throws Exception {
+		Socket s = sslTest.getSocketFactory().createSocket("localhost", 9998);
+		expect(s, "Welcome");
+		send(s, "I'm Secure Tester");
+		expect(s, "Hello Secure Tester");
+		s.close();
+	}
+	
+	@Test(timeout=30000)
+	public void testTCPClient() throws Exception {
+		TCPClient client = new TCPClient();
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		expect(client, "Welcome");
+		send(client, "I'm Tester");
+		expect(client, "Hello Tester");
+		client.close();
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		expect(client, "Welcome");
+		send(client, "Hello");
+		expect(client, "I don't understand you");
+		client.close();
+	}
+	
+	@Test(timeout=30000)
+	public void testSSLClient() throws Exception {
+		SSLClient client = new SSLClient(sslTest);
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9998), 10000);
+		sp.blockThrow(0);
+		expect(client, "Welcome");
+		send(client, "I'm Secure Tester");
+		expect(client, "Hello Secure Tester");
+		client.close();
+	}
+	
+	@SuppressWarnings("resource")
+	public static void expect(Socket s, String message) throws Exception {
+		InputStream in = s.getInputStream();
+		StringBuilder msg = new StringBuilder();
+		do {
+			int c = in.read();
+			Assert.assertFalse(c <= 0);
+			if (c == '\n') {
+				Assert.assertEquals(message, msg.toString());
+				return;
+			}
+			msg.append((char)c);
+		} while (true);
+	}
+	
+	public static void expect(TCPClient client, String message) throws Exception {
+		@SuppressWarnings("resource")
+		ByteArrayIO io = client.getReceiver().readUntil((byte)'\n', 128, 10000).blockResult(0);
+		Assert.assertEquals(message, io.getAsString(StandardCharsets.US_ASCII));
+	}
+	
+	public static void send(Socket s, String message) throws Exception {
+		send(s, message.getBytes(StandardCharsets.US_ASCII), 0);
+	}
+	
+	private static void send(Socket s, byte[] message, int pos) throws Exception {
+		int rem = message.length - pos;
+		if (rem < 3) {
+			s.getOutputStream().write(message, pos, rem);
+			s.getOutputStream().write('\n');
+			s.getOutputStream().flush();
+		} else {
+			s.getOutputStream().write(message, pos, rem / 2 + 1);
+			s.getOutputStream().flush();
+			send(s, message, pos + rem / 2 + 1);
+		}
+	}
+	
+	public static void send(TCPClient client, String message) throws Exception {
+		send(client, message.getBytes(StandardCharsets.US_ASCII), 0);
+	}
+	
+	private static void send(TCPClient client, byte[] message, int pos) throws Exception {
+		int rem = message.length - pos;
+		if (rem < 3) {
+			client.send(ByteBuffer.wrap(message, pos, rem));
+			client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }));
+		} else {
+			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1));
+			send(client, message, pos + rem / 2 + 1);
+		}
+	}
+	
+}
