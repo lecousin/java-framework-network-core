@@ -61,24 +61,29 @@ public class NetUtil {
 	public static byte[] IPv6FromString(String str) {
 		byte[] ip = new byte[16];
 		String[] strs = str.split("\\:");
-		for (int i = 0; i < strs.length; ++i) {
-			String s = strs[i];
-			if (s.length() == 0) {
-				for (int j = strs.length - 1, pos = 7; j > i; --j, --pos) {
-					s = strs[j];
-					if (s.length() > 2) {
-						ip[pos * 2] = StringUtil.decodeHexaByte(s.substring(0, s.length() - 2));
-						ip[pos * 2 + 1] = StringUtil.decodeHexaByte(s.substring(2));
-					} else
-						ip[pos * 2 + 1] = StringUtil.decodeHexaByte(s);
-				}
-				break;
+		if (str.startsWith("::")) {
+			for (int j = strs.length - 1, pos = 7; j > 1; --j, --pos) {
+				String s = strs[j];
+				long l = StringUtil.decodeHexaLong(s);
+				ip[pos * 2] = (byte)((l & 0xFF00) >> 8);
+				ip[pos * 2 + 1] = (byte)(l & 0xFF);
 			}
-			if (s.length() > 2) {
-				ip[i * 2] = StringUtil.decodeHexaByte(s.substring(0, s.length() - 2));
-				ip[i * 2 + 1] = StringUtil.decodeHexaByte(s.substring(2));
-			} else
-				ip[i * 2 + 1] = StringUtil.decodeHexaByte(s);
+		} else {
+			for (int i = 0; i < strs.length; ++i) {
+				String s = strs[i];
+				if (s.length() == 0) {
+					for (int j = strs.length - 1, pos = 7; j > i; --j, --pos) {
+						s = strs[j];
+						long l = StringUtil.decodeHexaLong(s);
+						ip[pos * 2] = (byte)((l & 0xFF00) >> 8);
+						ip[pos * 2 + 1] = (byte)(l & 0xFF);
+					}
+					break;
+				}
+				long l = StringUtil.decodeHexaLong(s);
+				ip[i * 2] = (byte)((l & 0xFF00) >> 8);
+				ip[i * 2 + 1] = (byte)(l & 0xFF);
+			}
 		}
 		return ip;
 	}

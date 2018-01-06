@@ -36,6 +36,7 @@ public class TestSession extends LCCoreAbstractTest {
 	public void testNetworkSessionProvider() throws Exception {
 		SessionInMemory sm = new SessionInMemory();
 		NetworkSessionProvider sp = new NetworkSessionProvider(sm, 5000, "test");
+		Assert.assertEquals(5000, sp.getExpiration());
 		TCPClient client = new TCPClient();
 		client.connect(new InetSocketAddress("www.google.com", 80), 10000).blockThrow(0);
 		Session s = sp.create(client);

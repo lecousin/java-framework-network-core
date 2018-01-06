@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +15,7 @@ import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger.Level;
+import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
@@ -232,7 +234,7 @@ public class TestTCP extends AbstractNetworkTest {
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.DEBUG);
 		TCPClient client = new TCPClient();
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9997), 10000);
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9997), 10000, new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
 		sp.blockThrow(0);
 		byte[] data = new byte[100000];
 		for (int i = 0; i < data.length; ++i)
