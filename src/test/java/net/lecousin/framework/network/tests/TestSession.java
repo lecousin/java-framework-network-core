@@ -3,7 +3,11 @@ package net.lecousin.framework.network.tests;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.net.InetSocketAddress;
+
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.network.client.TCPClient;
+import net.lecousin.framework.network.session.NetworkSessionProvider;
 import net.lecousin.framework.network.session.Session;
 import net.lecousin.framework.network.session.SessionInMemory;
 
@@ -26,6 +30,26 @@ public class TestSession extends LCCoreAbstractTest {
 		sm.freeId(id);
 		Assert.assertNull(sm.load(id));
 		sm.close();
+	}
+	
+	@Test
+	public void testNetworkSessionProvider() throws Exception {
+		SessionInMemory sm = new SessionInMemory();
+		NetworkSessionProvider sp = new NetworkSessionProvider(sm, 5000, "test");
+		TCPClient client = new TCPClient();
+		client.connect(new InetSocketAddress("www.google.com", 80), 10000).blockThrow(0);
+		Session s = sp.create(client);
+		String id = s.getId();
+		Assert.assertNull(s.getData("hello"));
+		s.putData("hello", "world");
+		sp.save(s, client);
+		s = sp.get(id, client);
+		Assert.assertNotNull(s);
+		Assert.assertEquals("world", s.getData("hello"));
+		sp.destroy(id);
+		s = sp.get(id, client);
+		Assert.assertNull(s);
+		sp.close();
 	}
 	
 }

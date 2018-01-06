@@ -9,9 +9,11 @@ import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
+import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
@@ -19,6 +21,7 @@ import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
+import net.lecousin.framework.util.Provider;
 
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -29,6 +32,7 @@ public class TestTCP extends AbstractNetworkTest {
 
 	private static TCPServer server;
 	private static TCPServer serverSSL;
+	private static TCPServer echoServer;
 	
 	public static class TestProtocol implements ServerProtocol {
 
@@ -87,6 +91,46 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 		
 	}
+
+	
+	public static class EchoProtocol implements ServerProtocol {
+
+		@Override
+		public void startProtocol(TCPServerClient client) {
+			try { client.waitForData(10000); }
+			catch (ClosedChannelException e) {
+				e.printStackTrace(System.err);
+			}
+		}
+
+		@Override
+		public int getInputBufferSize() {
+			return 1024;
+		}
+
+		@Override
+		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+			System.out.println("Received from echo client: " + data.remaining());
+			new Task.Cpu.FromRunnable("Handling client request", Task.PRIORITY_NORMAL, () -> {
+				client.send(data).listenInline(() -> {
+					onbufferavailable.run();
+					try { client.waitForData(10000); }
+					catch (ClosedChannelException e) {
+						e.printStackTrace(System.err);
+					}
+				});
+			}).start();
+			return false;
+		}
+
+		@Override
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+			LinkedList<ByteBuffer> list = new LinkedList<>();
+			list.add(data);
+			return list;
+		}
+		
+	}
 	
 	@BeforeClass
 	public static void launchTCPServer() throws Exception {
@@ -96,6 +140,9 @@ public class TestTCP extends AbstractNetworkTest {
 		serverSSL = new TCPServer();
 		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
 		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0);
+		echoServer = new TCPServer();
+		echoServer.setProtocol(new EchoProtocol());
+		echoServer.bind(new InetSocketAddress("localhost", 9997), 0);
 	}
 	
 	@AfterClass
@@ -132,15 +179,40 @@ public class TestTCP extends AbstractNetworkTest {
 		TCPClient client = new TCPClient();
 		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
+		client.getLocalAddress();
+		Assert.assertFalse(client.hasAttribute("test"));
+		client.setAttribute("test", "true");
+		Assert.assertTrue(client.hasAttribute("test"));
+		Assert.assertEquals("true", client.getAttribute("test"));
+		Assert.assertEquals("true", client.removeAttribute("test"));
+		Assert.assertFalse(client.hasAttribute("test"));
 		expect(client, "Welcome");
 		send(client, "I'm Tester");
 		expect(client, "Hello Tester");
 		client.close();
+		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "Hello");
 		expect(client, "I don't understand you");
+		client.close();
+		client = new TCPClient();
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		Assert.assertArrayEquals("Welcome\n".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(8, 10000).blockResult(0));
+		sp = new SynchronizationPoint<>();
+		client.newDataToSendWhenPossible(new Provider<ByteBuffer>() {
+			@Override
+			public ByteBuffer provide() {
+				return ByteBuffer.wrap("test".getBytes());
+			}
+		}, sp);
+		client.close();
+		client = new TCPClient();
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		client.getReceiver().readAvailableBytes(10, 0).blockResult(0);
 		client.close();
 	}
 	
@@ -153,6 +225,25 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "I'm Secure Tester");
 		expect(client, "Hello Secure Tester");
 		client.close();
+	}
+	
+	@Test(timeout=120000)
+	public void testEcho() throws Exception {
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
+		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.DEBUG);
+		TCPClient client = new TCPClient();
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9997), 10000);
+		sp.blockThrow(0);
+		byte[] data = new byte[100000];
+		for (int i = 0; i < data.length; ++i)
+			data[i] = (byte)i;
+		for (int i = 0; i < 10; ++i)
+			client.send(ByteBuffer.wrap(data));
+		for (int i = 0; i < 10; ++i)
+			Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
+		client.close();
+		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 	}
 	
 	@SuppressWarnings("resource")

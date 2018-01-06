@@ -86,6 +86,13 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	}
 	
 	@Override
+	public void save(Session session, TCPRemote client) {
+		String id = session.getId();
+		String sid = id.substring(16, id.length() - 16);
+		storage.save(sid, session);
+	}
+	
+	@Override
 	public void destroy(String id) {
 		String sid = id.substring(16, id.length() - 16);
 		storage.freeId(sid);

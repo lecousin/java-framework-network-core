@@ -14,6 +14,9 @@ public interface SessionProvider<T> extends Closeable {
 	/** Create a new session for the client. */
 	public Session create(T client);
 	
+	/** Save the session. */
+	public void save(Session session, T client);
+	
 	/** Destroy a session. */
 	public void destroy(String id);
 	
