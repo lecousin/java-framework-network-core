@@ -19,6 +19,7 @@ import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.ssl.SSLLayer;
+import net.lecousin.framework.util.Triple;
 
 /**
  * SSL client adding SSL layer to a TCPClient.
@@ -105,16 +106,26 @@ public class SSLClient extends TCPClient {
 			if (data.isEmpty()) return;
 			AsyncWork<ByteBuffer, IOException> waiting;
 			ByteBuffer buffer;
+			Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer> waitAgain = null;
 			synchronized (this) {
-				waiting = (AsyncWork<ByteBuffer, IOException>)removeAttribute(WAITING_DATA_ATTRIBUTE);
-				if (waiting == null) {
+				LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list =
+					(LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>>)
+					getAttribute(WAITING_DATA_ATTRIBUTE);
+				if (list == null) {
 					receivedData.addAll(data);
 					return;
 				}
+				waiting = list.removeFirst().getValue1();
+				if (list.isEmpty())
+					removeAttribute(WAITING_DATA_ATTRIBUTE);
+				else
+					waitAgain = list.getFirst();
 				buffer = data.removeFirst();
 				if (!data.isEmpty())
 					receivedData.addAll(data);
 			}
+			if (waitAgain != null)
+				waitForSSLData(waitAgain.getValue2().intValue(), waitAgain.getValue3().intValue());
 			waiting.unblockSuccess(buffer);
 		}
 		
@@ -197,40 +208,60 @@ public class SSLClient extends TCPClient {
 	@Override
 	public AsyncWork<ByteBuffer, IOException> receiveData(int expectedBytes, int timeout) {
 		AsyncWork<ByteBuffer, IOException> result = new AsyncWork<>();
+		boolean firstWait = false;
 		synchronized (sslClient) {
 			if (!receivedData.isEmpty()) {
 				result.unblockSuccess(receivedData.removeFirst());
-			} else
-				setAttribute(WAITING_DATA_ATTRIBUTE, result);
+				return result;
+			}
+			@SuppressWarnings("unchecked")
+			LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list =
+				(LinkedList<Triple<AsyncWork<ByteBuffer, IOException>,Integer,Integer>>)getAttribute(WAITING_DATA_ATTRIBUTE);
+			if (list == null) {
+				list = new LinkedList<>();
+				setAttribute(WAITING_DATA_ATTRIBUTE, list);
+				firstWait = true;
+			}
+			list.add(new Triple<>(result, Integer.valueOf(expectedBytes), Integer.valueOf(timeout)));
 		}
 		if (result.isUnblocked())
 			return result;
-		waitForSSLData(expectedBytes, timeout);
+		if (firstWait)
+			waitForSSLData(expectedBytes, timeout);
 		return result;
 	}
 	
+	private AsyncWork<ByteBuffer, IOException> lastReceive = null;
+	
 	private void waitForSSLData(int expectedBytes, int timeout) {
+		if (lastReceive != null && !lastReceive.isUnblocked())
+			return;
 		AsyncWork<ByteBuffer, IOException> receive = super.receiveData(expectedBytes, timeout);
+		lastReceive = receive;
 		receive.listenAsync(new Task.Cpu<Void, NoException>("Receive SSL data from server", Task.PRIORITY_NORMAL) {
 			@SuppressWarnings("unchecked")
 			@Override
 			public Void run() {
 				if (receive.hasError()) {
-					AsyncWork<ByteBuffer, IOException> waiting;
+					LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list;
 					synchronized (sslClient) {
-						waiting = (AsyncWork<ByteBuffer, IOException>)removeAttribute(WAITING_DATA_ATTRIBUTE);
+						list = (LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>>)
+							removeAttribute(WAITING_DATA_ATTRIBUTE);
 					}
-					if (waiting != null)
-						waiting.error(receive.getError());
+					if (list != null)
+						for (Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer> t : list)
+							t.getValue1().error(receive.getError());
 					return null;
 				}
 				if (receive.isCancelled()) {
-					AsyncWork<ByteBuffer, IOException> waiting;
+					LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list;
 					synchronized (sslClient) {
-						waiting = (AsyncWork<ByteBuffer, IOException>)removeAttribute(WAITING_DATA_ATTRIBUTE);
+						list = (LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>>)
+							removeAttribute(WAITING_DATA_ATTRIBUTE);
 					}
-					if (waiting != null)
-						waiting.cancel(receive.getCancelEvent());
+					if (list != null)
+						for (Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer> t : list)
+							t.getValue1().cancel(receive.getCancelEvent());
 					return null;
 				}
 				ByteBuffer b = receive.getResult();

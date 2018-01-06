@@ -192,6 +192,9 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	public AsyncWork<ByteBuffer, IOException> receiveData(int expectedBytes, int timeout) {
 		if (endOfInput)
 			return new AsyncWork<>(null, null);
+		if (networkClient.reading != null && !networkClient.reading.isUnblocked()) {
+			return new AsyncWork<>(null, new IOException("TCPClient is already waiting for data"));
+		}
 		if (logger.isDebugEnabled())
 			logger.debug("Register to NetworkManager for reading data");
 		networkClient.reading = new AsyncWork<>();
