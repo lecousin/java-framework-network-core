@@ -20,6 +20,7 @@ public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 		// logging
 		LoggerFactory log = LCCore.getApplication().getLoggerFactory();
 		log.getLogger("network").setLevel(Level.TRACE);
+		log.getLogger("network-data").setLevel(Level.TRACE);
 		log.getLogger("SSL").setLevel(Level.TRACE);
 		log.getLogger(TCPClient.class).setLevel(Level.TRACE);
 		log.getLogger(SSLClient.class).setLevel(Level.TRACE);

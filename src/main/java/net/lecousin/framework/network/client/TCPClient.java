@@ -436,12 +436,12 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	public ISynchronizationPoint<IOException> send(ByteBuffer data) {
 		if (logger.isDebugEnabled())
 			logger.debug("Sending data: " + data.remaining());
-		if (logger.isTraceEnabled()) {
+		if (NetworkManager.dataLogger.isTraceEnabled()) {
 			if (data.hasArray()) {
 				StringBuilder s = new StringBuilder(data.remaining() * 4);
-				s.append("Data to send:\r\n");
+				s.append("TCPClient: Data to send to server:\r\n");
 				DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-				logger.trace(s.toString());
+				NetworkManager.dataLogger.trace(s.toString());
 			}
 		}
 		if (data.remaining() == 0)

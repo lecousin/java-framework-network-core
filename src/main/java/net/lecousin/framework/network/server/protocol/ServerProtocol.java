@@ -31,6 +31,8 @@ public interface ServerProtocol {
 	 * The implementation should get the data, then process it in a separate thread/task to avoid blocking the
 	 * network manager thread.
 	 * Once the given buffer has been processed, the onbufferavailable should be called to signal the given buffer can be reused.
+	 * When calling onbufferavailable, if some data is remaining the method dataReceivedFromClient will be called again
+	 * so the implementation must ensure there is no remaining data in the buffer.
 	 * Most implementations will return false, and call the method waitForData later on, because it starts a separate
 	 * task to process the message. Because of this, if returning true, new data may arrive before the previous
 	 * task has been executed and data may be processed in a wrong order, or some concurrency issues may come in the data

@@ -37,6 +37,7 @@ import org.apache.commons.logging.LogFactory;
 public class NetworkManager implements Closeable {
 
 	public static final Log logger = LogFactory.getLog("network");
+	public static final Log dataLogger = LogFactory.getLog("network-data");
 	
 	/**
 	 * Base interface for a listener, with a channelClosed event.
@@ -288,8 +289,25 @@ public class NetworkManager implements Closeable {
 						} else {
 							Attachment listeners = (Attachment)key.attachment();
 							try {
-								key.interestOps(key.interestOps() | req.newOps);
-								listeners.set(req.newOps, req.listener, req.timeout);
+								int curOps = key.interestOps();
+								int conflict = curOps & req.newOps;
+								if (conflict == 0) {
+									key.interestOps(curOps | req.newOps);
+									listeners.set(req.newOps, req.listener, req.timeout);
+								} else {
+									if ((conflict & SelectionKey.OP_ACCEPT) != 0)
+										((Server)req.listener).acceptError(
+											new IOException("Already registered for accept operation"));
+									if ((conflict & SelectionKey.OP_CONNECT) != 0)
+										((Client)req.listener).connectionFailed(
+											new IOException("Already registered for connect operation"));
+									if ((conflict & SelectionKey.OP_READ) != 0)
+										((Receiver)req.listener).receiveError(
+										new IOException("Already registered for read operation"), null);
+									if ((conflict & SelectionKey.OP_WRITE) != 0)
+										logger.error(
+											new IOException("Already registered for write operation"));
+								}
 							} catch (CancelledKeyException e) {
 								listeners.channelClosed();
 							}
@@ -369,13 +387,13 @@ public class NetworkManager implements Closeable {
 										tcp.endOfInput(buffer);
 									} else {
 										buffer.flip();
-										if (logger.isTraceEnabled()) {
+										if (dataLogger.isTraceEnabled()) {
 											StringBuilder s = new StringBuilder(nb * 5 + 256);
 											s.append(nb).append(" bytes received on ");
 											s.append(key.channel().toString());
 											s.append("\r\n");
 											DebugUtil.dumpHex(s, buffer);
-											logger.trace(s.toString());
+											dataLogger.trace(s.toString());
 										}
 										if (!tcp.received(buffer)) {
 											try {

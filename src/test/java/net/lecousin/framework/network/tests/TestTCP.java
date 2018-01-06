@@ -232,6 +232,7 @@ public class TestTCP extends AbstractNetworkTest {
 	@Test(timeout=120000)
 	public void testEcho() throws Exception {
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.DEBUG);
 		TCPClient client = new TCPClient();
 		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9997), 10000, new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
@@ -245,6 +246,7 @@ public class TestTCP extends AbstractNetworkTest {
 			Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
 		client.close();
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 	}
 	

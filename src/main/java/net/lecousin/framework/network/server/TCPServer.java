@@ -239,17 +239,18 @@ public class TCPServer implements Closeable {
 			if (channel == null) throw new ClosedChannelException();
 			// ask the protocol to do any needed processing before sending the data
 			LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
+			boolean waitBefore = waitToSend;
 			if (!waitToSend) {
 				// we can start sending data right away
 				ByteBuffer buffer = null;
 				while (buffer != null || !buffers.isEmpty()) {
 					if (buffer == null)
 						buffer = buffers.removeFirst();
-					if (NetworkManager.logger.isTraceEnabled()) {
+					if (NetworkManager.dataLogger.isTraceEnabled()) {
 						StringBuilder s = new StringBuilder(128 + buffer.remaining() * 5);
 						s.append("Sending ").append(buffer.remaining()).append(" bytes to client:\r\n");
 						DebugUtil.dumpHex(s, buffer);
-						NetworkManager.logger.trace(s.toString());
+						NetworkManager.dataLogger.trace(s.toString());
 					}
 					int nb;
 					try { nb = channel.write(buffer); }
@@ -280,7 +281,7 @@ public class TCPServer implements Closeable {
 				outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
 			}
 			closeAfterLastOutput = closeAfter;
-			if (dataToSendProvider == null)
+			if (!waitBefore && dataToSendProvider == null)
 				manager.register(channel, SelectionKey.OP_WRITE, this, 0);
 			return sp;
 		}
@@ -291,12 +292,13 @@ public class TCPServer implements Closeable {
 				@Override
 				public Void run() {
 					synchronized (Client.this) {
+						if (outputBuffers == null) return null;
 						if (outputBuffers.isEmpty() && dataToSendProvider != null) {
 							outputBuffers.add(new Pair<>(dataToSendProvider.provide(), dataToSendSP));
 							dataToSendProvider = null;
 							dataToSendSP = null;
 						}
-						while (!outputBuffers.isEmpty()) {
+						while (outputBuffers != null && !outputBuffers.isEmpty()) {
 							Pair<ByteBuffer,SynchronizationPoint<IOException>> toWrite = outputBuffers.getFirst();
 							int nb;
 							do {
@@ -326,6 +328,7 @@ public class TCPServer implements Closeable {
 							} while (nb > 0);
 							if (nb == 0) break; // cannot write anymore
 						}
+						if (outputBuffers == null) return null;
 						if (outputBuffers.isEmpty()) {
 							// we are done with all data to be sent
 							if (closeAfterLastOutput) {
