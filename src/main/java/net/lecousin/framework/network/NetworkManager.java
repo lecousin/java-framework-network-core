@@ -259,6 +259,10 @@ public class NetworkManager implements Closeable {
 		selector.wakeup();
 	}
 	
+	/** Wake up the thread. This may be necessary in some platforms when closing a socket.
+	 * For example, closing a server on some Windows platform may keep the port in use until the
+	 * selector wakes up.
+	 */
 	public void wakeup() {
 		selector.wakeup();
 	}
@@ -430,7 +434,7 @@ public class NetworkManager implements Closeable {
 								try { receiver.receiveError(IO.error(e), buffer); }
 								catch (Throwable t) { logger.error("Error", t); }
 								try { key.interestOps(0); }
-								catch (CancelledKeyException e2) {}
+								catch (CancelledKeyException e2) { /* ignore */ }
 								catch (Throwable t) { logger.error("Error", t); }
 								listeners.reset();
 								try { key.channel().close(); }
@@ -444,7 +448,8 @@ public class NetworkManager implements Closeable {
 								Sender sender = listeners.onWrite;
 								listeners.onWrite = null;
 								listeners.onWriteTimeout = 0;
-								if (logger.isTraceEnabled()) logger.trace("Socket ready to send data on " + key.channel());
+								if (logger.isTraceEnabled())
+									logger.trace("Socket ready to send data on " + key.channel());
 								sender.readyToSend();
 							} catch (Throwable t) {
 								if (logger.isErrorEnabled())
@@ -499,7 +504,8 @@ public class NetworkManager implements Closeable {
 			Attachment listeners = (Attachment)key.attachment();
 			if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
 				if (now > listeners.connectStart + listeners.onConnectTimeout) {
-					listeners.onConnect.connectionFailed(new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
+					listeners.onConnect.connectionFailed(
+						new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
 					key.cancel();
 					continue;
 				}
@@ -508,9 +514,10 @@ public class NetworkManager implements Closeable {
 			}
 			if (listeners.onRead != null && listeners.onReadTimeout > 0) {
 				if (now > listeners.readStart + listeners.onReadTimeout) {
-					listeners.onRead.receiveError(new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
+					listeners.onRead.receiveError(
+						new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
 					try { key.interestOps(0); }
-					catch (CancelledKeyException e2) {}
+					catch (CancelledKeyException e2) { /* ignore */ }
 					catch (Throwable t) { logger.error("Error", t); }
 					listeners.reset();
 					try { key.channel().close(); }

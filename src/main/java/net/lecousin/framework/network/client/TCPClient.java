@@ -362,7 +362,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				ByteBuffer rem = remainingRead;
 				remainingRead = null;
 				call(rem, data, listener, bufferSize, timeout);
-			}, (error) -> {}, (cancel) -> {});
+			}, (error) -> { }, (cancel) -> { });
 		}
 		
 		private void call(ByteBuffer remainingData, ByteBuffer newData, Listener<ByteBuffer> listener, int bufferSize, int timeout) {
@@ -388,7 +388,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					ByteBuffer rem = remainingRead;
 					remainingRead = null;
 					call(rem, d, listener, bufferSize, timeout);
-				}, (error) -> {}, (cancel) -> {});
+				}, (error) -> { }, (cancel) -> { });
 			}).start();
 		}
 	}

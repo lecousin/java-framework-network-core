@@ -29,7 +29,7 @@ public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 		SSLContextConfig sslConfig = new SSLContextConfig();
 		sslConfig.keyStore = new SSLContextConfig.Store("JKS", "classpath:net/lecousin/framework/network/test/ssl/keystore.ssl.test", "password");
 		sslConfig.trustStore = new SSLContextConfig.Store("JKS", "classpath:net/lecousin/framework/network/test/ssl/truststore.ssl.test", "password");
-		sslTest = SSLContextConfig.create(LCCore.getApplication(), sslConfig);
+		sslTest = SSLContextConfig.create(sslConfig);
 	}
 	
 	public static SSLContext sslTest;

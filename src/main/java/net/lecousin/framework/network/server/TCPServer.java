@@ -271,7 +271,7 @@ public class TCPServer implements Closeable {
 						continue;
 					}
 					if (nb == 0) break; // cannot write anymore
-				};
+				}
 				if (buffer != null) buffers.addFirst(buffer);
 				waitToSend = true;
 			}

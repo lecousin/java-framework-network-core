@@ -391,7 +391,8 @@ public class SSLLayer {
 			dst.flip();
 			buffers.add(dst);
 			if (logger.isDebugEnabled())
-				logger.debug(result.bytesConsumed() + " bytes encrypted into " + dst.remaining() + " bytes for SSL connection " + conn);
+				logger.debug(result.bytesConsumed() + " bytes encrypted into "
+					+ dst.remaining() + " bytes for SSL connection " + conn);
 			dst = null;
 			if (!data.hasRemaining())
 				break;

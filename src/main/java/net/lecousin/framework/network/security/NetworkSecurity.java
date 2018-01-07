@@ -70,7 +70,9 @@ public class NetworkSecurity {
 		Config config = null;
 		if (file.exists()) {
 			try (FileIO.ReadOnly input = new FileIO.ReadOnly(file, Task.PRIORITY_IMPORTANT)) {
-				AsyncWork<Object, Exception> res = new XMLDeserializer(null, "Security").deserialize(new TypeDefinition(Config.class), input, new ArrayList<>(0));
+				AsyncWork<Object, Exception> res =
+					new XMLDeserializer(null, "Security").deserialize(
+						new TypeDefinition(Config.class), input, new ArrayList<>(0));
 				config = (Config)res.blockResult(0);
 			} catch (Throwable t) {
 				System.err.println("Error reading configuration file " + file.getAbsolutePath() + ": " + t.getMessage());
