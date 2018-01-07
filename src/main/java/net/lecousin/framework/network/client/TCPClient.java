@@ -16,6 +16,7 @@ import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.AsyncWork.AsyncWorkListener;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.event.Listener;
 import net.lecousin.framework.event.SimpleEvent;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO.Seekable.SeekType;
@@ -341,6 +342,54 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				}
 			});
 			return res;
+		}
+		
+		/** Wait for data until connection is closed.
+		 * When some data is available, the given listener is called.
+		 * If the listener does not fully consumed the buffer, when new data is received
+		 * the new data is appended to the remaining bytes before to call again the listener.
+		 * Once this method has been called, no other read method can be called because it
+		 * will conflict by trying to read concurrently.
+		 */
+		public void readForEver(int bufferSize, int timeout, Listener<ByteBuffer> listener) {
+			if (remainingRead != null) {
+				ByteBuffer data = remainingRead;
+				remainingRead = null;
+				call(null, data, listener, bufferSize, timeout);
+				return;
+			}
+			client.receiveData(bufferSize, timeout).listenInline((data) -> {
+				ByteBuffer rem = remainingRead;
+				remainingRead = null;
+				call(rem, data, listener, bufferSize, timeout);
+			}, (error) -> {}, (cancel) -> {});
+		}
+		
+		private void call(ByteBuffer remainingData, ByteBuffer newData, Listener<ByteBuffer> listener, int bufferSize, int timeout) {
+			new Task.Cpu.FromRunnable("Call TCPClient data receiver", Task.PRIORITY_NORMAL, () -> {
+				ByteBuffer data;
+				if (remainingData == null)
+					data = newData;
+				else {
+					data = ByteBuffer.allocate(remainingData.remaining() + newData.remaining());
+					data.put(remainingData);
+					data.put(newData);
+					data.flip();
+				}
+				try {
+					listener.fire(data);
+				} catch (Throwable t) {
+					logger.error("Exception thrown by data listener", t);
+					return;
+				}
+				if (data.hasRemaining())
+					remainingRead = data;
+				client.receiveData(bufferSize, timeout).listenInline((d) -> {
+					ByteBuffer rem = remainingRead;
+					remainingRead = null;
+					call(rem, d, listener, bufferSize, timeout);
+				}, (error) -> {}, (cancel) -> {});
+			}).start();
 		}
 	}
 	
