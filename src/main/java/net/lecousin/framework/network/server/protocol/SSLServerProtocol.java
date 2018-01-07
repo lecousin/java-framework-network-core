@@ -7,6 +7,7 @@ import java.security.GeneralSecurityException;
 import java.util.LinkedList;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
@@ -80,6 +81,10 @@ public class SSLServerProtocol implements ServerProtocol {
 		public void handshakeDone() {
         	// start the next protocol
         	protocol.startProtocol(client);
+		}
+		
+		@Override
+		public void handshakeError(SSLException error) {
 		}
 		
 		@Override

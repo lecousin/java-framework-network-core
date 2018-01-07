@@ -2,13 +2,17 @@ package net.lecousin.framework.network.tests;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
+
+import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
@@ -248,6 +252,51 @@ public class TestTCP extends AbstractNetworkTest {
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+	}
+	
+	@SuppressWarnings("resource")
+	@Test(timeout=30000)
+	public void testInvalidConnection() throws Exception {
+		TCPClient client = new TCPClient();
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9990), 10000);
+		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
+		catch (ConnectException e) {
+			// expected
+		}
+		client.close();
+		
+		client = new TCPClient();
+		sp = client.connect(new InetSocketAddress("0.0.0.1", 80), 10000);
+		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
+		catch (SocketException e) {
+			// expected
+		}
+		client.close();
+		
+		client = new SSLClient();
+		sp = client.connect(new InetSocketAddress("localhost", 9990), 10000);
+		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
+		catch (ConnectException e) {
+			// expected
+		}
+		client.close();
+		
+		client = new SSLClient();
+		sp = client.connect(new InetSocketAddress("0.0.0.1", 80), 10000);
+		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
+		catch (SocketException e) {
+			// expected
+		}
+		client.close();
+
+		
+		client = new SSLClient();
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
+		catch (SSLException e) {
+			// expected
+		}
+		client.close();
 	}
 	
 	@SuppressWarnings("resource")

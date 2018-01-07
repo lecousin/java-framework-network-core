@@ -92,7 +92,7 @@ public class TestNetUtil extends LCCoreAbstractTest {
 	}
 	
 	@Test
-	public void testIPSerializer() throws Exception {
+	public void testIPSerializerIPv4() throws Exception {
 		TestIPSerializer t = new TestIPSerializer();
 		t.ip = new byte[] { 1, 2, 3, 4 };
 		ByteArrayIO io = new ByteArrayIO(4096, "test");
@@ -105,6 +105,21 @@ public class TestNetUtil extends LCCoreAbstractTest {
 		io.seekSync(SeekType.FROM_BEGINNING, 0);
 		TestIPSerializer2 t3 = (TestIPSerializer2)new XMLDeserializer(null, "test").deserialize(new TypeDefinition(TestIPSerializer2.class), io, new ArrayList<>(0)).blockResult(0);
 		Assert.assertEquals("1.2.3.4", t3.ip);
+		io.unlockClose();
+		io.close();
+	}
+	
+	@Test
+	public void testIPSerializerIPv6() throws Exception {
+		TestIPSerializer t = new TestIPSerializer();
+		t.ip = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+		ByteArrayIO io = new ByteArrayIO(4096, "test");
+		io.lockClose();
+		new XMLSerializer(null, "test", null).serialize(t, new TypeDefinition(TestIPSerializer.class), io, new ArrayList<>(0)).blockThrow(0);
+		System.out.println(io.getAsString(StandardCharsets.UTF_8));
+		io.seekSync(SeekType.FROM_BEGINNING, 0);
+		TestIPSerializer t2 = (TestIPSerializer)new XMLDeserializer(null, "test").deserialize(new TypeDefinition(TestIPSerializer.class), io, new ArrayList<>(0)).blockResult(0);
+		Assert.assertArrayEquals(t.ip, t2.ip);
 		io.unlockClose();
 		io.close();
 	}

@@ -10,6 +10,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
@@ -98,6 +99,13 @@ public class SSLClient extends TCPClient {
 			@SuppressWarnings("unchecked")
 			SynchronizationPoint<IOException> sp = (SynchronizationPoint<IOException>)getAttribute(CONNECT_ATTRIBUTE);
 			sp.unblock();
+		}
+		
+		@Override
+		public void handshakeError(SSLException error) {
+			@SuppressWarnings("unchecked")
+			SynchronizationPoint<IOException> sp = (SynchronizationPoint<IOException>)getAttribute(CONNECT_ATTRIBUTE);
+			sp.error(error);
 		}
 		
 		@SuppressWarnings("unchecked")

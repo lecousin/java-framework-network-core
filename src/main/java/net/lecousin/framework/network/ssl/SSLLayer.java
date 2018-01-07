@@ -46,6 +46,9 @@ public class SSLLayer {
 		
 		/** Called once the SSL handshake has been successfully done. */
 		void handshakeDone();
+		
+		/** Called if the SSL handshake fail. */
+		void handshakeError(SSLException error);
 
 		/** Signal that we are waiting for data. */
 		void waitForData() throws ClosedChannelException;
@@ -205,6 +208,7 @@ public class SSLLayer {
 									if (logger.isErrorEnabled())
 										logger.error("Cannot unwrap SSL data from connection "
 											+ conn, e);
+									conn.handshakeError(e);
 									conn.close();
 									return null;
 								}

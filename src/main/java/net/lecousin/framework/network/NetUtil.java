@@ -17,7 +17,9 @@ import net.lecousin.framework.util.StringUtil;
 /**
  * Utility methods for network.
  */
-public class NetUtil {
+public final class NetUtil {
+	
+	private NetUtil() { /* no instance */ }
 
 	/** Convert a string containing a MAC address into an array of bytes. */
 	public static byte[] MACFromString(String str) {
