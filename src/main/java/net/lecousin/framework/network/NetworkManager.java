@@ -22,6 +22,7 @@ import java.util.Set;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
+import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.util.DebugUtil;
@@ -158,6 +159,7 @@ public class NetworkManager implements Closeable {
 		private int newOps;
 		private Listener listener;
 		private int timeout;
+		private AsyncWork<SelectionKey, IOException> result;
 	}
 	
 	private static class Attachment {
@@ -225,46 +227,42 @@ public class NetworkManager implements Closeable {
 	 * @param ops operations (see {@link SelectionKey}
 	 * @param listener listener that must implement the interfaces according to the requested operations
 	 */
-	public <T extends SelectableChannel & NetworkChannel> void register(T channel, int ops, Listener listener, int timeout) {
+	public <T extends SelectableChannel & NetworkChannel> AsyncWork<SelectionKey, IOException> register(
+		T channel, int ops, Listener listener, int timeout
+	) {
 		if ((ops & SelectionKey.OP_ACCEPT) != 0)
 			if (!(listener instanceof Server)) {
 				logger.error("Invalid listener for ACCEPT: " + listener.getClass().getName(), new Exception());
-				return;
+				return new AsyncWork<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_CONNECT) != 0)
 			if (!(listener instanceof Client)) {
 				logger.error("Invalid listener for CONNECT: " + listener.getClass().getName(), new Exception());
-				return;
+				return new AsyncWork<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_READ) != 0)
 			if (!(listener instanceof Receiver)) {
 				logger.error("Invalid listener for READ: " + listener.getClass().getName(), new Exception());
-				return;
+				return new AsyncWork<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_WRITE) != 0)
 			if (!(listener instanceof Sender)) {
 				logger.error("Invalid listener for WRITE: " + listener.getClass().getName(), new Exception());
-				return;
+				return new AsyncWork<>(null, new IOException("Invalid listener"));
 			}
 		RegisterRequest req = new RegisterRequest();
 		req.channel = channel;
 		req.newOps = ops;
 		req.listener = listener;
 		req.timeout = timeout;
+		req.result = new AsyncWork<>();
 		if (logger.isTraceEnabled())
 			logger.trace("Registering channel " + channel + " for operations " + ops + " with timeout " + timeout);
 		synchronized (requests) {
 			requests.addLast(req);
 		}
 		selector.wakeup();
-	}
-	
-	/** Wake up the thread. This may be necessary in some platforms when closing a socket.
-	 * For example, closing a server on some Windows platform may keep the port in use until the
-	 * selector wakes up.
-	 */
-	public void wakeup() {
-		selector.wakeup();
+		return req.result;
 	}
 	
 	private class WorkerLoop implements Runnable {
@@ -289,7 +287,8 @@ public class NetworkManager implements Closeable {
 						if (key == null) {
 							Attachment listeners = new Attachment();
 							listeners.set(req.newOps, req.listener, req.timeout);
-							req.channel.register(selector, req.newOps, listeners);
+							key = req.channel.register(selector, req.newOps, listeners);
+							req.result.unblockSuccess(key);
 						} else {
 							Attachment listeners = (Attachment)key.attachment();
 							try {
@@ -298,26 +297,41 @@ public class NetworkManager implements Closeable {
 								if (conflict == 0) {
 									key.interestOps(curOps | req.newOps);
 									listeners.set(req.newOps, req.listener, req.timeout);
+									req.result.unblockSuccess(key);
 								} else {
-									if ((conflict & SelectionKey.OP_ACCEPT) != 0)
-										((Server)req.listener).acceptError(
+									req.result.unblockError(new IOException("Operation already registered"));
+									try {
+										if ((conflict & SelectionKey.OP_ACCEPT) != 0)
+											((Server)req.listener).acceptError(
 											new IOException("Already registered for accept operation"));
-									if ((conflict & SelectionKey.OP_CONNECT) != 0)
-										((Client)req.listener).connectionFailed(
+										if ((conflict & SelectionKey.OP_CONNECT) != 0)
+											((Client)req.listener).connectionFailed(
 											new IOException("Already registered for connect operation"));
-									if ((conflict & SelectionKey.OP_READ) != 0)
-										((Receiver)req.listener).receiveError(
+										if ((conflict & SelectionKey.OP_READ) != 0)
+											((Receiver)req.listener).receiveError(
 										new IOException("Already registered for read operation"), null);
-									if ((conflict & SelectionKey.OP_WRITE) != 0)
-										logger.error(
+										if ((conflict & SelectionKey.OP_WRITE) != 0)
+											logger.error(
 											new IOException("Already registered for write operation"));
+									} catch (Throwable t) {
+										logger.error("Error calling listener", t);
+									}
 								}
 							} catch (CancelledKeyException e) {
-								listeners.channelClosed();
+								try { listeners.channelClosed(); }
+								catch (Throwable t) {
+									logger.error("Error calling channelClosed", t);
+								}
+								req.result.error(IO.error(e));
 							}
 						}
 					} catch (ClosedChannelException e) {
-						req.listener.channelClosed();
+						if (req.listener != null)
+							try { req.listener.channelClosed(); }
+							catch (Throwable t) {
+								logger.error("Error calling channelClosed", t);
+							}
+						req.result.error(e);
 					}
 					if (stop) break;
 				} while (true);

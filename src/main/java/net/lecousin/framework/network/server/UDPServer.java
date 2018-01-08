@@ -7,12 +7,16 @@ import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -51,15 +55,20 @@ public class UDPServer implements Closeable {
 	
 	@Override
 	public void close() {
+		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
 		for (Channel channel : channels) {
 			if (NetworkManager.logger.isInfoEnabled())
 				NetworkManager.logger.info("Closing UDP server: " + channel.channel.toString());
+			channel.key.cancel();
 			try { channel.channel.close(); }
 			catch (IOException e) {
 				if (NetworkManager.logger.isErrorEnabled())
 					NetworkManager.logger.error("Error closing UDP server", e);
 			}
+			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
+		for (ISynchronizationPoint<IOException> s : sp)
+			s.block(5000);
 		channels.clear();
 		app.closed(this);
 	}
@@ -71,8 +80,9 @@ public class UDPServer implements Closeable {
 		channel.bind(local);
 		channel.configureBlocking(false);
 		Channel c = new Channel(channel);
+		try { c.key = manager.register(channel, SelectionKey.OP_READ, c, 0).blockResult(0); }
+		catch (Exception e) { throw IO.error(e); }
 		channels.add(c);
-		manager.register(channel, SelectionKey.OP_READ, c, 0);
 		local = channel.getLocalAddress();
 		if (NetworkManager.logger.isInfoEnabled())
 			NetworkManager.logger.info("New UDP server listening on " + local.toString());
@@ -87,6 +97,7 @@ public class UDPServer implements Closeable {
 		}
 		
 		protected DatagramChannel channel;
+		protected SelectionKey key;
 		
 		@Override
 		public void channelClosed() {

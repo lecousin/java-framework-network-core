@@ -11,6 +11,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
@@ -19,6 +20,7 @@ import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.util.DebugUtil;
@@ -78,8 +80,9 @@ public class TCPServer implements Closeable {
 		channel.configureBlocking(false);
 		channel.bind(local, backlog);
 		ServerChannel sc = new ServerChannel(channel);
+		try { sc.key = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0).blockResult(0); }
+		catch (Exception e) { throw IO.error(e); }
 		channels.add(sc);
-		manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
 		local = channel.getLocalAddress();
 		if (NetworkManager.logger.isInfoEnabled())
 			NetworkManager.logger.info("New TCP server listening on " + local.toString());
@@ -88,16 +91,20 @@ public class TCPServer implements Closeable {
 	
 	/** Stop listening to all ports and addresses. */
 	public void unbindAll() {
+		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
 		for (ServerChannel channel : channels) {
 			if (NetworkManager.logger.isInfoEnabled())
 				NetworkManager.logger.info("Closing TCP server: " + channel.channel.toString());
+			channel.key.cancel();
 			try { channel.channel.close(); }
 			catch (IOException e) {
 				if (NetworkManager.logger.isErrorEnabled())
 					NetworkManager.logger.error("Error closing TCP server", e);
 			}
+			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
-		NetworkManager.get().wakeup();
+		for (ISynchronizationPoint<IOException> s : sp)
+			s.block(5000);
 		channels.clear();
 		synchronized (clients) {
 			for (Client client : clients)
@@ -112,6 +119,7 @@ public class TCPServer implements Closeable {
 		}
 		
 		private ServerSocketChannel channel;
+		private SelectionKey key;
 
 		@SuppressWarnings("resource")
 		@Override
