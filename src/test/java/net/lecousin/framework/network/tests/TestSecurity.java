@@ -15,6 +15,7 @@ import net.lecousin.framework.network.tests.TestTCP.TestProtocol;
 
 public class TestSecurity extends LCCoreAbstractTest {
 
+	@SuppressWarnings("resource")
 	@Test
 	public void testBlockIP() throws Exception {
 		TCPServer server = new TCPServer();

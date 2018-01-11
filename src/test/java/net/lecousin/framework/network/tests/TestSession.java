@@ -51,6 +51,8 @@ public class TestSession extends LCCoreAbstractTest {
 		s = sp.get(id, client);
 		Assert.assertNull(s);
 		sp.close();
+		client.close();
+		sm.close();
 	}
 	
 }
