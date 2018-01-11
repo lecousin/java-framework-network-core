@@ -19,6 +19,7 @@ import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger.Level;
+import net.lecousin.framework.mutable.MutableBoolean;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
@@ -60,6 +61,7 @@ public class TestTCP extends AbstractNetworkTest {
 		@Override
 		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			System.out.println("Received from client: " + data.remaining());
+			Assert.assertTrue(client.getServer() == server || client.getServer() == serverSSL);
 			new Task.Cpu.FromRunnable("Handling client request", Task.PRIORITY_NORMAL, () -> {
 				while (data.hasRemaining()) {
 					StringBuilder msg;
@@ -72,8 +74,13 @@ public class TestTCP extends AbstractNetworkTest {
 					if (b == '\n') {
 						String s = msg.toString();
 						if (!s.startsWith("I'm ")) {
-							client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
-							client.close();
+							if (!s.equals("flood me")) {
+								client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
+								client.close();
+								break;
+							}
+							for (int i = 0; i < 1000; ++i)
+								client.send(ByteBuffer.allocate(65536));
 							break;
 						}
 						client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
@@ -137,7 +144,7 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 		
 	}
-	
+
 	@BeforeClass
 	public static void launchTCPServer() throws Exception {
 		server = new TCPServer();
@@ -159,6 +166,7 @@ public class TestTCP extends AbstractNetworkTest {
 	
 	@Test(timeout=30000)
 	public void testServer() throws Exception {
+		server.getLocalAddresses();
 		Socket s = new Socket("localhost", 9999);
 		expect(s, "Welcome");
 		send(s, "I'm Tester");
@@ -196,6 +204,7 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "I'm Tester");
 		expect(client, "Hello Tester");
 		client.close();
+		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
@@ -203,6 +212,7 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "Hello");
 		expect(client, "I don't understand you");
 		client.close();
+		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
@@ -215,11 +225,38 @@ public class TestTCP extends AbstractNetworkTest {
 			}
 		}, sp);
 		client.close();
+		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
 		client.getReceiver().readAvailableBytes(10, 0).blockResult(0);
 		client.close();
+		
+		client = new TCPClient();
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		MutableBoolean closed = new MutableBoolean(false);
+		client.onclosed(() -> { closed.set(true); });
+		Assert.assertFalse(closed.get());
+		StringBuilder received = new StringBuilder();
+		SynchronizationPoint<Exception> spReceived = new SynchronizationPoint<>();
+		client.getReceiver().readForEver(256, 0, (data) -> {
+			while (data.hasRemaining())
+				received.append((char)data.get());
+			if (received.toString().endsWith("Hello Message 2\n"))
+				spReceived.unblock();
+		});
+		Assert.assertFalse(closed.get());
+		send(client, "I'm Message 1");
+		Assert.assertFalse(closed.get());
+		send(client, "I'm Message 2");
+		Assert.assertFalse(closed.get());
+		spReceived.block(10000);
+		Assert.assertFalse(closed.get());
+		Assert.assertEquals("Welcome\nHello Message 1\nHello Message 2\n", received.toString());
+		Assert.assertFalse(closed.get());
+		client.close();
+		Assert.assertTrue(closed.get());
 	}
 	
 	@Test(timeout=30000)
@@ -230,6 +267,17 @@ public class TestTCP extends AbstractNetworkTest {
 		expect(client, "Welcome");
 		send(client, "I'm Secure Tester");
 		expect(client, "Hello Secure Tester");
+		client.close();
+	}
+	
+	@Test
+	public void testFloodMe() throws Exception {
+		TCPClient client = new TCPClient();
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp.blockThrow(0);
+		expect(client, "Welcome");
+		send(client, "flood me");
+		client.getReceiver().readBytes(1000 * 65536, 15000);
 		client.close();
 	}
 	
