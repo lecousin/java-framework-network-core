@@ -55,7 +55,7 @@
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.9.11</version>
+		<version>0.9.12</version>
   	</dependency>
   	<dependency>
   		<groupId>commons-logging</groupId>
@@ -77,7 +77,7 @@
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.9.11</version>
+		<version>0.9.12</version>
   		<type>test-jar</type>
   		<scope>test</scope>
   	</dependency>
