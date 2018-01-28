@@ -1,5 +1,6 @@
 package net.lecousin.framework.network;
 
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
@@ -133,6 +134,26 @@ public final class NetUtil {
 			}
 		}
 		return ips;
+	}
+	
+	/** Return the IPv6 loopback address if it is enabled, or null if not supported. */
+	public static Inet6Address getLoopbackIPv6Address() {
+		try {
+			Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
+			while (e.hasMoreElements()) {
+				NetworkInterface i = e.nextElement();
+				if (!i.isLoopback()) continue;
+				Enumeration<InetAddress> addresses = i.getInetAddresses();
+				while (addresses.hasMoreElements()) {
+					InetAddress a = addresses.nextElement();
+					if (a instanceof Inet6Address)
+						return (Inet6Address)a;
+				}
+			}
+		} catch (Throwable t) {
+			// ignore
+		}
+		return null;
 	}
 	
 	/** Serialize and descrialize an IP address to and from a string. */

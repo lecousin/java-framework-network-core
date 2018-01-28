@@ -21,6 +21,7 @@ import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.mutable.MutableBoolean;
+import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
@@ -151,15 +152,19 @@ public class TestTCP extends AbstractNetworkTest {
 		server = new TCPServer();
 		server.setProtocol(new TestProtocol());
 		server.bind(new InetSocketAddress("localhost", 9999), 0);
-		server.bind(new InetSocketAddress("::1", 9999), 0);
+		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
+		if (ipv6 != null)
+			server.bind(new InetSocketAddress(ipv6, 9999), 0);
 		serverSSL = new TCPServer();
 		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
 		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0);
-		serverSSL.bind(new InetSocketAddress("::1", 9998), 0);
+		if (ipv6 != null)
+			serverSSL.bind(new InetSocketAddress(ipv6, 9998), 0);
 		echoServer = new TCPServer();
 		echoServer.setProtocol(new EchoProtocol());
 		echoServer.bind(new InetSocketAddress("localhost", 9997), 0);
-		echoServer.bind(new InetSocketAddress("::1", 9997), 0);
+		if (ipv6 != null)
+			echoServer.bind(new InetSocketAddress(ipv6, 9997), 0);
 	}
 	
 	@AfterClass
@@ -176,7 +181,11 @@ public class TestTCP extends AbstractNetworkTest {
 		send(s, "I'm Tester");
 		expect(s, "Hello Tester");
 		s.close();
-		s = new Socket(InetAddress.getByName("::1"), 9999);
+		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
+		if (ipv6 != null)
+			s = new Socket(ipv6, 9999);
+		else
+			s = new Socket("localhost", 9999);
 		expect(s, "Welcome");
 		send(s, "Hello");
 		expect(s, "I don't understand you");
