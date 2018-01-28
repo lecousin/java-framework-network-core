@@ -11,6 +11,7 @@ import java.nio.channels.SelectionKey;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import net.lecousin.framework.collections.TurnArray;
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
@@ -36,7 +37,9 @@ public class UDPClient implements Closeable {
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
 		public void channelClosed() {
-			// TODO
+			new Task.Cpu.FromRunnable("Close UDP client", Task.PRIORITY_RATHER_LOW, () -> {
+				close();
+			}).start();
 		}
 		
 		@Override
@@ -96,6 +99,13 @@ public class UDPClient implements Closeable {
 			try { channel.close(); }
 			catch (Throwable e) { /* ignore */ }
 			channel = null;
+			synchronized (toSend) {
+				Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+				while ((p = toSend.pollFirst()) != null) {
+					if (p.getValue2() != null)
+						p.getValue2().cancel(new CancelException("Channel closed"));
+				}
+			}
 		}
 	}
 	
@@ -151,7 +161,7 @@ public class UDPClient implements Closeable {
 		public void channelClosed() {
 			AnswerListener l;
 			synchronized (UDPClient.this) {
-				channel = null;
+				close();
 				l = listener;
 				listener = null;
 			}
@@ -162,9 +172,7 @@ public class UDPClient implements Closeable {
 		public void receiveError(IOException error, ByteBuffer buffer) {
 			AnswerListener l;
 			synchronized (UDPClient.this) {
-				try { if (channel != null) channel.close(); }
-				catch (Throwable e) { /* ignore */ }
-				channel = null;
+				close();
 				l = listener;
 				listener = null;
 			}
@@ -186,9 +194,7 @@ public class UDPClient implements Closeable {
 			}
 			this.buffer = l.dataReceived(buffer);
 			if (this.buffer == null) {
-				try { if (channel != null) channel.close(); }
-				catch (Throwable e) { /* ignore */ }
-				channel = null;
+				close();
 				return false;
 			}
 			synchronized (UDPClient.this) {

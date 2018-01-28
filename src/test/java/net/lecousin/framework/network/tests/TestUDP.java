@@ -59,6 +59,19 @@ public class TestUDP extends AbstractNetworkTest {
 		jp.start();
 		jp.blockThrow(0);
 	}
+
+	@Test(timeout=30000)
+	public void testSendManyMessages() throws Exception {
+		byte[] buf = new byte[32768];
+		for (int i = 0; i < buf.length; ++i)
+			buf[i] = (byte)i;
+		UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
+		SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
+		for (int i = 0; i < 100; ++i)
+			client.send(ByteBuffer.wrap(buf), i == 99 ? last : null);
+		last.blockThrow(0);
+		client.close();
+	}
 	
 	@SuppressWarnings("resource")
 	private static void send(byte[] message) throws Exception {

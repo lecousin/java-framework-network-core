@@ -4,6 +4,7 @@
 		<category name="test"/>
 		<category name="test2">
 			<ipv4 expiration="1517132455936" ip="1.1.1.1"/>
+			<ipv6 expiration="1517132455936" ip="0102:0304:0506:0708:090A:0B0C:0D0E:0F10"/>
 		</category>
 	</ipBlackList>
 	<bruteForceAttempt>

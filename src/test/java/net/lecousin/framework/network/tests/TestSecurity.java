@@ -49,6 +49,14 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertEquals(5, buf.remaining());
 		client.close();
 		
+		// black list with IPv6
+		NetworkSecurity.blacklist("test", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), 5000);
+		NetworkSecurity.unblacklist("test", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }));
+
+		// keep black listed ips to save
+		NetworkSecurity.blacklist("test2", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), 600000);
+		NetworkSecurity.blacklist("test2", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), 600000);
+		
 		server.close();
 	}
 	
