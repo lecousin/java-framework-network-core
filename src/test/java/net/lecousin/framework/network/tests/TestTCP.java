@@ -3,6 +3,7 @@ package net.lecousin.framework.network.tests;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
@@ -150,12 +151,15 @@ public class TestTCP extends AbstractNetworkTest {
 		server = new TCPServer();
 		server.setProtocol(new TestProtocol());
 		server.bind(new InetSocketAddress("localhost", 9999), 0);
+		server.bind(new InetSocketAddress("::1", 9999), 0);
 		serverSSL = new TCPServer();
 		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
 		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0);
+		serverSSL.bind(new InetSocketAddress("::1", 9998), 0);
 		echoServer = new TCPServer();
 		echoServer.setProtocol(new EchoProtocol());
 		echoServer.bind(new InetSocketAddress("localhost", 9997), 0);
+		echoServer.bind(new InetSocketAddress("::1", 9997), 0);
 	}
 	
 	@AfterClass
@@ -172,7 +176,7 @@ public class TestTCP extends AbstractNetworkTest {
 		send(s, "I'm Tester");
 		expect(s, "Hello Tester");
 		s.close();
-		s = new Socket("localhost", 9999);
+		s = new Socket(InetAddress.getByName("::1"), 9999);
 		expect(s, "Welcome");
 		send(s, "Hello");
 		expect(s, "I don't understand you");

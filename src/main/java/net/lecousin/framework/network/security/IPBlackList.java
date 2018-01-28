@@ -33,23 +33,25 @@ public class IPBlackList {
 					Category cat = new Category();
 					categories.add(cat);
 					cat.name = cfgCat.name;
-					for (Config.IP ip : cfgCat.ipv4) {
-		                int address  = ip.ip[3] & 0xFF;
-		                address |= ((ip.ip[2] << 8) & 0xFF00);
-		                address |= ((ip.ip[1] << 16) & 0xFF0000);
-		                address |= ((ip.ip[0] << 24) & 0xFF000000);
-		                cat.ipv4.put(Integer.valueOf(address), Long.valueOf(ip.expiration));
-					}
-					for (Config.IP ip : cfgCat.ipv6) {
-						Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 0));
-						Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 8));
-						Map<Long,Long> m = cat.ipv6.get(ip1);
-						if (m == null) {
-							m = new HashMap<>(20);
-							cat.ipv6.put(ip1, m);
+					if (cfgCat.ipv4 != null)
+						for (Config.IP ip : cfgCat.ipv4) {
+			                int address  = ip.ip[3] & 0xFF;
+			                address |= ((ip.ip[2] << 8) & 0xFF00);
+			                address |= ((ip.ip[1] << 16) & 0xFF0000);
+			                address |= ((ip.ip[0] << 24) & 0xFF000000);
+			                cat.ipv4.put(Integer.valueOf(address), Long.valueOf(ip.expiration));
 						}
-						m.put(ip2, Long.valueOf(ip.expiration));
-					}
+					if (cfgCat.ipv6 != null)
+						for (Config.IP ip : cfgCat.ipv6) {
+							Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 0));
+							Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 8));
+							Map<Long,Long> m = cat.ipv6.get(ip1);
+							if (m == null) {
+								m = new HashMap<>(20);
+								cat.ipv6.put(ip1, m);
+							}
+							m.put(ip2, Long.valueOf(ip.expiration));
+						}
 				}
 		}
 		

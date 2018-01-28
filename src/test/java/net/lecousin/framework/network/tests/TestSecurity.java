@@ -16,7 +16,7 @@ import net.lecousin.framework.network.tests.TestTCP.TestProtocol;
 public class TestSecurity extends LCCoreAbstractTest {
 
 	@SuppressWarnings("resource")
-	@Test
+	@Test(timeout=60000)
 	public void testBlockIP() throws Exception {
 		TCPServer server = new TCPServer();
 		server.setProtocol(new TestProtocol());
@@ -50,6 +50,21 @@ public class TestSecurity extends LCCoreAbstractTest {
 		client.close();
 		
 		server.close();
+	}
+	
+	@Test(timeout=60000)
+	public void testBruteForceAttack() throws Exception {
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
+
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test", "test");
+		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test", "test");
 	}
 	
 }

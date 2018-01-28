@@ -31,6 +31,7 @@ public class BruteForceAttempt {
 		Mapping(Config cfg) {
 			if (cfg != null && cfg.attempt != null)
 				for (Config.Attempt ca : cfg.attempt) {
+					if (ca.ip == null) continue;
 					if (ca.ip.length == 4) {
 						Map<String, Map<Integer, Attempt>> m1 = ipv4.get(ca.application);
 						if (m1 == null) {

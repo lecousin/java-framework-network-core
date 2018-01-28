@@ -13,6 +13,7 @@ import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
+import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.FileIO;
 import net.lecousin.framework.io.serialization.TypeDefinition;
@@ -53,12 +54,26 @@ public class NetworkSecurity {
 		
 	}
 	
+	private static final String INIT_DATA_NAME = "net.lecousin.framework.network.security.init";
+	
 	/** Initialize an instance for the current application. */
-	@SuppressWarnings("resource")
+	@SuppressWarnings({ "resource", "unchecked" })
 	public static void init() {
 		net.lecousin.framework.application.Application app = LCCore.getApplication();
-		NetworkSecurity instance = app.getInstance(NetworkSecurity.class);
-		if (instance != null) return;
+		SynchronizationPoint<NoException> init;
+		boolean existingInit = false;
+		synchronized (NetworkSecurity.class) {
+			init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+			if (init == null) {
+				init = new SynchronizationPoint<>();
+				app.setData(INIT_DATA_NAME, init);
+			} else
+				existingInit = true;
+		}
+		if (existingInit) {
+			init.block(0);
+			return;
+		}
 		NetworkSecurity sec = new NetworkSecurity();
 		app.setInstance(NetworkSecurity.class, sec);
 		File file = new File(app.getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
@@ -113,6 +128,7 @@ public class NetworkSecurity {
 				sec.taskClean.cancel(new CancelException("Application stopping"));
 			}
 		});
+		init.unblock();
 	}
 	
 	
@@ -155,8 +171,16 @@ public class NetworkSecurity {
 	}
 	
 	/** Return the instance for the current application. */
+	@SuppressWarnings("unchecked")
 	public static NetworkSecurity get() {
-		return LCCore.getApplication().getInstance(NetworkSecurity.class);
+		Application app = LCCore.getApplication();
+		SynchronizationPoint<NoException> init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+		if (init == null) {
+			init();
+			init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+		}
+		init.block(0);
+		return app.getInstance(NetworkSecurity.class);
 	}
 	
 	/** Return true if the given address is not black listed. */
