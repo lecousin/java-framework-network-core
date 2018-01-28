@@ -206,7 +206,7 @@ public class TestTCP extends AbstractNetworkTest {
 		client.close();
 		
 		client = new TCPClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp = client.connect(new InetSocketAddress("localhost", 9999), 0);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "Hello");

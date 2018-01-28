@@ -124,4 +124,19 @@ public class TestNetUtil extends LCCoreAbstractTest {
 		io.close();
 	}
 	
+	@Test
+	public void testIPSerializerNull() throws Exception {
+		TestIPSerializer t = new TestIPSerializer();
+		t.ip = null;
+		ByteArrayIO io = new ByteArrayIO(4096, "test");
+		io.lockClose();
+		new XMLSerializer(null, "test", null).serialize(t, new TypeDefinition(TestIPSerializer.class), io, new ArrayList<>(0)).blockThrow(0);
+		System.out.println(io.getAsString(StandardCharsets.UTF_8));
+		io.seekSync(SeekType.FROM_BEGINNING, 0);
+		TestIPSerializer t2 = (TestIPSerializer)new XMLDeserializer(null, "test").deserialize(new TypeDefinition(TestIPSerializer.class), io, new ArrayList<>(0)).blockResult(0);
+		Assert.assertNull(t2.ip);
+		io.unlockClose();
+		io.close();
+	}
+	
 }
