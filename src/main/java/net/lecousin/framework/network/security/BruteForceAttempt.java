@@ -215,8 +215,8 @@ public class BruteForceAttempt {
 		public ArrayList<Attempt> attempt;
 		
 		/** Saved attempt. */
+		@TypeSerializer(NetUtil.IPSerializer.class)
 		public static class Attempt {
-			@TypeSerializer(NetUtil.IPSerializer.class)
 			public byte[] ip;
 			public String application;
 			public String functionality;

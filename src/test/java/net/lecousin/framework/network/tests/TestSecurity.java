@@ -4,14 +4,14 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 
-import org.junit.Assert;
-import org.junit.Test;
-
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.tests.TestTCP.TestProtocol;
+
+import org.junit.Assert;
+import org.junit.Test;
 
 public class TestSecurity extends LCCoreAbstractTest {
 

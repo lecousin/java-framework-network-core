@@ -1,0 +1,13 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<Security xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<ipBlackList>
+		<category name="test"/>
+		<category name="test2">
+			<ipv4 expiration="1517132455936" ip="1.1.1.1"/>
+		</category>
+	</ipBlackList>
+	<bruteForceAttempt>
+		<attempt attempts="1" lastTime="1517132395435" lastValue="test" functionality="test" application="test" ip="1.2.3.4"/>
+		<attempt attempts="1" lastTime="1517132395452" lastValue="test" functionality="test" application="test" ip="0102:0304:0506:0708:090A:0B0C:0D0E:0F10"/>
+	</bruteForceAttempt>
+</Security>

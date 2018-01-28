@@ -219,8 +219,8 @@ public class IPBlackList {
 		}
 		
 		/** IP address. */
+		@TypeSerializer(NetUtil.IPSerializer.class)
 		public static class IP {
-			@TypeSerializer(NetUtil.IPSerializer.class)
 			public byte[] ip;
 			public long expiration;
 		}
