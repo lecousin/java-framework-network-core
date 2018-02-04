@@ -17,7 +17,7 @@ Main functionalities:
 ### Current version - branch master
 
 [![Maven Central](https://img.shields.io/maven-central/v/net.lecousin.framework.network/core.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22net.lecousin.framework.network%22%20AND%20a%3A%22core%22)
-[![Javadoc](https://img.shields.io/badge/javadoc-0.2.7-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.2.7)
+[![Javadoc](https://img.shields.io/badge/javadoc-0.2.8-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.2.8)
 
 ![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=master "Build Status")
 ![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=master&svg=true "Build Status")

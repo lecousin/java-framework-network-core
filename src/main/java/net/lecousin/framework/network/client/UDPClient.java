@@ -51,33 +51,46 @@ public class UDPClient implements Closeable {
 			new Task.Cpu<Void, NoException>("Sending datagrams to server", Task.PRIORITY_NORMAL) {
 				@Override
 				public Void run() {
-					synchronized (toSend) {
-						while (!toSend.isEmpty()) {
-							Pair<ByteBuffer, SynchronizationPoint<IOException>> p = toSend.getFirst();
-							int nb;
-							try {
-								synchronized (UDPClient.this) {
-									if (channel == null) throw new ClosedChannelException();
-									nb = channel.send(p.getValue1(), target);
-								}
-							} catch (IOException e) {
-								// error while sending data, just skip it
-								toSend.removeFirst();
-								if (p.getValue2() != null)
-									p.getValue2().error(e);
-								continue;
+					boolean needsMore = false; 
+					while (true) {
+						Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+						synchronized (toSend) {
+							if (toSend.isEmpty()) break;
+							p = toSend.getFirst();
+						}
+						int nb;
+						try {
+							synchronized (UDPClient.this) {
+								if (channel == null) throw new ClosedChannelException();
+								nb = channel.send(p.getValue1(), target);
 							}
-							if (nb == 0) break; // cannot write anymore
-							if (!p.getValue1().hasRemaining()) {
-								if (p.getValue2() != null)
-									p.getValue2().unblock();
-								toSend.removeFirst();
+						} catch (IOException e) {
+							// error while sending data, just skip it
+							if (p.getValue2() != null)
+								p.getValue2().error(e);
+							synchronized (toSend) {
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
+							}
+							continue;
+						}
+						if (nb == 0) {
+							// cannot write anymore
+							needsMore = true;
+							break;
+						}
+						if (!p.getValue1().hasRemaining()) {
+							if (p.getValue2() != null)
+								p.getValue2().unblock();
+							synchronized (toSend) {
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
 							}
 						}
-						if (toSend.isEmpty()) {
-							// no more data to send
-							return null;
-						}
+					}
+					if (!needsMore) {
+						// no more data to send
+						return null;
 					}
 					// still something to write, we need to register to the network manager
 					manager.register(channel, SelectionKey.OP_WRITE, sender, 0);

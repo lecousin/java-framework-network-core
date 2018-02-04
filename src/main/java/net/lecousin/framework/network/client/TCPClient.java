@@ -428,9 +428,10 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				public Void run() {
 					if (logger.isDebugEnabled())
 						logger.debug("Socket ready for sending, sending...");
-					synchronized (toSend) {
-						do {
-							Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+					boolean needsMore = false;
+					while (true) {
+						Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+						synchronized (toSend) {
 							if (toSend.isEmpty()) {
 								if (dataToSendProvider != null) {
 									p = new Pair<>(dataToSendProvider.provide(), dataToSendSP);
@@ -441,40 +442,50 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 									break;
 							} else
 								p = toSend.getFirst();
-							if (logger.isDebugEnabled())
-								logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
-							if (p.getValue1().remaining() == 0) {
-								if (p.getValue2() != null)
-									p.getValue2().unblock();
-								if (!toSend.isEmpty())
-									toSend.removeFirst();
-								continue;
-							}
-							int nb;
-							try {
-								nb = channel.write(p.getValue1());
-							} catch (IOException e) {
-								// error while sending data, just skip it
-								if (!toSend.isEmpty())
-									toSend.removeFirst();
-								if (p.getValue2() != null)
-									p.getValue2().error(e);
-								continue;
-							}
-							if (logger.isDebugEnabled())
-								logger.debug(nb + " bytes sent to " + channel);
-							if (nb == 0) break; // cannot write anymore
-							if (!p.getValue1().hasRemaining()) {
-								if (p.getValue2() != null)
-									p.getValue2().unblock();
-								if (!toSend.isEmpty())
-									toSend.removeFirst();
-							}
-						} while (true);
-						if (toSend.isEmpty()) {
-							// no more data to send
-							return null;
 						}
+						if (logger.isDebugEnabled())
+							logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
+						if (p.getValue1().remaining() == 0) {
+							if (p.getValue2() != null)
+								p.getValue2().unblock();
+							synchronized (toSend) {
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
+							}
+							continue;
+						}
+						int nb;
+						try {
+							nb = channel.write(p.getValue1());
+						} catch (IOException e) {
+							// error while sending data, just skip it
+							if (p.getValue2() != null)
+								p.getValue2().error(e);
+							synchronized (toSend) {
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
+							}
+							continue;
+						}
+						if (logger.isDebugEnabled())
+							logger.debug(nb + " bytes sent to " + channel);
+						if (nb == 0) {
+							// cannot write anymore
+							needsMore = true;
+							break;
+						}
+						if (!p.getValue1().hasRemaining()) {
+							if (p.getValue2() != null)
+								p.getValue2().unblock();
+							synchronized (toSend) {
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
+							}
+						}
+					}
+					if (!needsMore) {
+						// no more data to send
+						return null;
 					}
 					// still something to write, we need to register to the network manager
 					manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
