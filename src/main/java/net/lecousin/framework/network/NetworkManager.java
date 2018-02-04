@@ -391,8 +391,9 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_READ) != 0) {
 							// data received
 							Receiver receiver = listeners.onRead;
-							ByteBuffer buffer = receiver.allocateReceiveBuffer();
+							ByteBuffer buffer = null;
 							try {
+								buffer = receiver.allocateReceiveBuffer();
 								if (receiver instanceof TCPReceiver) {
 									TCPReceiver tcp = (TCPReceiver)receiver;
 									int nb = ((ReadableByteChannel)key.channel()).read(buffer);

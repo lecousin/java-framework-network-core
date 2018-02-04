@@ -203,9 +203,11 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public ByteBuffer allocateReceiveBuffer() {
-			synchronized (inputBuffers) {
-				if (!inputBuffers.isEmpty()) {
-					ByteBuffer buffer = inputBuffers.remove(inputBuffers.size() - 1);
+			ArrayList<ByteBuffer> buffers = inputBuffers;
+			if (buffers == null) return ByteBuffer.allocate(512); // server closed
+			synchronized (buffers) {
+				if (!buffers.isEmpty()) {
+					ByteBuffer buffer = buffers.remove(buffers.size() - 1);
 					buffer.clear();
 					return buffer;
 				}
