@@ -8,7 +8,7 @@
 
   <groupId>net.lecousin.framework.network</groupId>
   <artifactId>core</artifactId>
-  <version>0.2.5</version>
+  <version>0.2.6</version>
   
   <name>lecousin.net Java framework - network - core</name>
   <description>Core network functionalities</description>
@@ -55,7 +55,7 @@
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.9.15</version>
+		<version>0.9.16</version>
   	</dependency>
   	<dependency>
   		<groupId>commons-logging</groupId>
@@ -77,7 +77,7 @@
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.9.15</version>
+		<version>0.9.16</version>
   		<type>test-jar</type>
   		<scope>test</scope>
   	</dependency>

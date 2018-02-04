@@ -242,10 +242,13 @@ public class SSLClient extends TCPClient {
 	private AsyncWork<ByteBuffer, IOException> lastReceive = null;
 	
 	private void waitForSSLData(int expectedBytes, int timeout) {
-		if (lastReceive != null && !lastReceive.isUnblocked())
-			return;
-		AsyncWork<ByteBuffer, IOException> receive = super.receiveData(expectedBytes, timeout);
-		lastReceive = receive;
+		AsyncWork<ByteBuffer, IOException> receive;
+		synchronized (sslClient) {
+			if (lastReceive != null && !lastReceive.isUnblocked())
+				return;
+			receive = super.receiveData(expectedBytes, timeout);
+			lastReceive = receive;
+		}
 		receive.listenAsync(new Task.Cpu<Void, NoException>("Receive SSL data from server", Task.PRIORITY_NORMAL) {
 			@SuppressWarnings("unchecked")
 			@Override

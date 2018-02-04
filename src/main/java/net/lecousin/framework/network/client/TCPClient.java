@@ -434,6 +434,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							if (toSend.isEmpty()) {
 								if (dataToSendProvider != null) {
 									p = new Pair<>(dataToSendProvider.provide(), dataToSendSP);
+									toSend.add(p);
 									dataToSendProvider = null;
 									dataToSendSP = null;
 								} else
@@ -445,7 +446,8 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							if (p.getValue1().remaining() == 0) {
 								if (p.getValue2() != null)
 									p.getValue2().unblock();
-								toSend.removeFirst();
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
 								continue;
 							}
 							int nb;
@@ -453,7 +455,8 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 								nb = channel.write(p.getValue1());
 							} catch (IOException e) {
 								// error while sending data, just skip it
-								toSend.removeFirst();
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
 								if (p.getValue2() != null)
 									p.getValue2().error(e);
 								continue;
@@ -464,7 +467,8 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							if (!p.getValue1().hasRemaining()) {
 								if (p.getValue2() != null)
 									p.getValue2().unblock();
-								toSend.removeFirst();
+								if (!toSend.isEmpty())
+									toSend.removeFirst();
 							}
 						} while (true);
 						if (toSend.isEmpty()) {

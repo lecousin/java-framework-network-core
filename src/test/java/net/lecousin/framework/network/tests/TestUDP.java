@@ -60,7 +60,7 @@ public class TestUDP extends AbstractNetworkTest {
 		jp.blockThrow(0);
 	}
 
-	@Test(timeout=30000)
+	@Test(timeout=120000)
 	public void testSendManyMessages() throws Exception {
 		byte[] buf = new byte[32768];
 		for (int i = 0; i < buf.length; ++i)
