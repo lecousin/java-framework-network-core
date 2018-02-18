@@ -14,6 +14,7 @@ import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.AsyncWork.AsyncWorkListener;
+import net.lecousin.framework.concurrent.synch.AsyncWork.AsyncWorkListenerReady;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.event.Listener;
@@ -243,15 +244,13 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					return res;
 				}
 			}
-			client.receiveData(buf.remaining(), timeout).listenInline(new AsyncWorkListener<ByteBuffer, IOException>() {
-				@Override
-				public void ready(ByteBuffer result) {
+			client.receiveData(buf.remaining(), timeout).listenInline(
+				new AsyncWorkListenerReady<ByteBuffer, IOException>((result, that) -> {
 					if (result == null) {
 						res.unblockError(new IOException("End of data after " + buf.position()
 							+ " bytes while waiting for " + nbBytes + " bytes"));
 						return;
 					}
-					AsyncWorkListener<ByteBuffer, IOException> that = this;
 					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
 						@Override
 						public Void run() {
@@ -266,18 +265,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							return null;
 						}
 					}.start();
-				}
-				
-				@Override
-				public void error(IOException error) {
-					res.unblockError(error);
-				}
-				
-				@Override
-				public void cancelled(CancelException event) {
-					res.unblockCancel(event);
-				}
-			});
+				}, res));
 			return res;
 		}
 		
