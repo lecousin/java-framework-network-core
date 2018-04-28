@@ -17,12 +17,16 @@ import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger.Level;
+import net.lecousin.framework.mutable.Mutable;
 import net.lecousin.framework.mutable.MutableBoolean;
+import net.lecousin.framework.mutable.MutableInteger;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.SocketOptionValue;
+import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
@@ -42,6 +46,11 @@ public class TestTCP extends AbstractNetworkTest {
 	private static TCPServer server;
 	private static TCPServer serverSSL;
 	private static TCPServer echoServer;
+	private static TCPServer sendDataServer;
+	private static TCPServer receiveDataServer;
+	
+	private static final int NB_BLOCKS = 250; 
+	private static final int BLOCK_SIZE = 12345; 
 	
 	public static class TestProtocol implements ServerProtocol {
 
@@ -147,6 +156,119 @@ public class TestTCP extends AbstractNetworkTest {
 		
 	}
 
+	private static byte[][] generateDataToSend() {
+		byte[][] data = new byte[NB_BLOCKS][BLOCK_SIZE];
+		for (int i = 0; i < NB_BLOCKS; ++i) {
+			for (int j = 0; j < BLOCK_SIZE; ++j)
+				data[i][j] = (byte)i;
+		}
+		return data;
+	}
+	
+	private static void sendDataLoop(TCPRemote remote) {
+		byte[][] data = generateDataToSend();
+		for (int i = 0; i < NB_BLOCKS; ++i) {
+			remote.send(ByteBuffer.wrap(data[i]));
+			if ((i % 20) == 0)
+				try { Thread.sleep(400); }
+				catch (InterruptedException e) {}
+			else if ((i % 5) == 0)
+				try { Thread.sleep(100); }
+				catch (InterruptedException e) {}
+		}
+	}
+	
+	public static class SendDataProtocol implements ServerProtocol {
+
+		@Override
+		public void startProtocol(TCPServerClient client) {
+			new Thread() {
+				@Override
+				public void run() {
+					sendDataLoop(client);
+				}
+			}.start();
+		}
+
+		@Override
+		public int getInputBufferSize() {
+			return 1024;
+		}
+
+		@Override
+		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+			client.close();
+			onbufferavailable.run();
+			return false;
+		}
+
+		@Override
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+			LinkedList<ByteBuffer> list = new LinkedList<>();
+			list.add(data);
+			return list;
+		}
+		
+	}
+	
+	public static class ReceiveDataProtocol implements ServerProtocol {
+
+		@Override
+		public void startProtocol(TCPServerClient client) {
+			client.setAttribute("block_counter", Integer.valueOf(0));
+			client.setAttribute("byte_counter", Integer.valueOf(0));
+			try { client.waitForData(10000); }
+			catch (ClosedChannelException e) {
+				e.printStackTrace(System.err);
+			}
+		}
+
+		@Override
+		public int getInputBufferSize() {
+			return 1024;
+		}
+
+		@Override
+		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+			int block = ((Integer)client.getAttribute("block_counter")).intValue();
+			int index = ((Integer)client.getAttribute("byte_counter")).intValue();
+			while (data.hasRemaining()) {
+				if (block >= NB_BLOCKS) {
+					System.err.println("ERROR: Unexpected data after the end");
+					client.close();
+					return false;
+				}
+				byte b = data.get();
+				if (b != (byte)block) {
+					System.err.println("ERROR: Unexpected byte " + b + " at block " + block + " byte " + index + ", expected is " + (byte)block);
+					client.close();
+					return false;
+				}
+				if (++index == BLOCK_SIZE) {
+					System.out.println("Block " + block + " received from client.");
+					index = 0;
+					block++;
+				}
+			}
+			client.setAttribute("block_counter", Integer.valueOf(block));
+			client.setAttribute("byte_counter", Integer.valueOf(index));
+			onbufferavailable.run();
+			if (block == NB_BLOCKS) {
+				client.send(ByteBuffer.wrap(new byte[] { 'O', 'K', '\n' }));
+				return false;
+			}
+			return true;
+		}
+
+		@Override
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+			LinkedList<ByteBuffer> list = new LinkedList<>();
+			list.add(data);
+			return list;
+		}
+		
+	}
+	
 	@BeforeClass
 	public static void launchTCPServer() throws Exception {
 		server = new TCPServer();
@@ -165,6 +287,16 @@ public class TestTCP extends AbstractNetworkTest {
 		echoServer.bind(new InetSocketAddress("localhost", 9997), 0);
 		if (ipv6 != null)
 			echoServer.bind(new InetSocketAddress(ipv6, 9997), 0);
+		sendDataServer = new TCPServer();
+		sendDataServer.setProtocol(new SendDataProtocol());
+		sendDataServer.bind(new InetSocketAddress("localhost", 9996), 0);
+		if (ipv6 != null)
+			sendDataServer.bind(new InetSocketAddress(ipv6, 9996), 0);
+		receiveDataServer = new TCPServer();
+		receiveDataServer.setProtocol(new ReceiveDataProtocol());
+		receiveDataServer.bind(new InetSocketAddress("localhost", 9995), 0);
+		if (ipv6 != null)
+			receiveDataServer.bind(new InetSocketAddress(ipv6, 9995), 0);
 	}
 	
 	@AfterClass
@@ -359,6 +491,75 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 		client.close();
 	}
+	
+	@Test(timeout=120000)
+	public void testSendDataClientToServer() throws Exception {
+		try {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			TCPClient client = new TCPClient();
+			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9995), 10000);
+			sp.blockThrow(0);
+			sendDataLoop(client);
+			expect(client, "OK");
+			client.close();
+		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+		}
+	}
+	
+	@Test(timeout=120000)
+	public void testSendDataServerToClient() throws Exception {
+		try {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			TCPClient client = new TCPClient();
+			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9996), 10000);
+			sp.blockThrow(0);
+			MutableInteger block = new MutableInteger(0);
+			Mutable<AsyncWork<byte[], IOException>> read = new Mutable<>(null);
+			SynchronizationPoint<IOException> end = new SynchronizationPoint<>();
+			Runnable listener = new Runnable() {
+				@Override
+				public void run() {
+					do {
+						if (read.get().hasError()) {
+							end.error(read.get().getError());
+							return;
+						}
+						for (int i = 0; i < BLOCK_SIZE; ++i)
+							if (read.get().getResult()[i] != (byte)block.get()) {
+								end.error(new IOException("Unexpected byte " + read.get().getResult()[i] + " in block " + block.get() + " index " + i + " expected is " + (byte)block.get()));
+								return;
+							}
+						if (block.inc() == NB_BLOCKS) {
+							end.unblock();
+							break;
+						}
+						read.set(client.getReceiver().readBytes(BLOCK_SIZE, 10000));
+						if (read.get().isUnblocked())
+							continue;
+						read.get().listenInline(this);
+						break;
+					} while (true);
+				}
+			};
+			read.set(client.getReceiver().readBytes(BLOCK_SIZE, 10000));
+			read.get().listenInline(listener);
+			end.blockThrow(0);
+			try {
+				byte[] remaining = client.getReceiver().readBytes(BLOCK_SIZE, 1000).blockResult(0);
+				client.close();
+				if (remaining.length > 0)
+					throw new AssertionError("Unexpected bytes after the end: " + remaining.length);
+			} catch (IOException e) {
+				// expected
+				client.close();
+			}
+		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+		}
+	}
+	
+	// --- Utilities
 	
 	@SuppressWarnings("resource")
 	public static void expect(Socket s, String message) throws Exception {
