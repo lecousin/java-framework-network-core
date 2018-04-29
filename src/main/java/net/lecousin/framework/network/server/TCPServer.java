@@ -16,10 +16,8 @@ import java.util.List;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.CancelException;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
-import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
@@ -216,16 +214,11 @@ public class TCPServer implements Closeable {
 		}
 		
 		@Override
-		public boolean received(ByteBuffer buffer) {
-			return protocol.dataReceivedFromClient(publicInterface, buffer, new Runnable() {
+		public void received(ByteBuffer buffer) {
+			protocol.dataReceivedFromClient(publicInterface, buffer, new Runnable() {
 				@Override
 				public void run() {
 					if (channel == null) return; // already closed
-					if (buffer.hasRemaining()) {
-						// if some data are still there, call again the protocol to process remaining data
-						received(buffer);
-						return;
-					}
 					synchronized (inputBuffers) {
 						inputBuffers.add(buffer);
 					}
@@ -298,63 +291,57 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public void readyToSend() {
-			new Task.Cpu<Void,NoException>("Sending data to server client", Task.PRIORITY_RATHER_IMPORTANT) {
-				@Override
-				public Void run() {
-					synchronized (Client.this) {
-						if (outputBuffers == null) return null;
-						if (outputBuffers.isEmpty() && dataToSendProvider != null) {
-							outputBuffers.add(new Pair<>(dataToSendProvider.provide(), dataToSendSP));
-							dataToSendProvider = null;
-							dataToSendSP = null;
-						}
-						while (outputBuffers != null && !outputBuffers.isEmpty()) {
-							Pair<ByteBuffer,SynchronizationPoint<IOException>> toWrite = outputBuffers.getFirst();
-							int nb;
-							do {
-								try { nb = channel.write(toWrite.getValue1()); }
-								catch (IOException e) {
-									// error while writing
-									close();
-									outputBuffers.removeFirst();
-									if (toWrite.getValue2() != null)
-										toWrite.getValue2().error(e);
-									while (!outputBuffers.isEmpty()) {
-										toWrite = outputBuffers.removeFirst();
-										if (toWrite.getValue2() != null)
-											toWrite.getValue2().error(e);
-									}
-									return null;
-								}
-								if (NetworkManager.logger.isDebugEnabled())
-									NetworkManager.logger.debug(nb + " bytes sent on " + channel);
-								if (!toWrite.getValue1().hasRemaining()) {
-									// we are done with this buffer
-									outputBuffers.removeFirst();
-									if (toWrite.getValue2() != null)
-										toWrite.getValue2().unblock();
-									break;
-								}
-							} while (nb > 0);
-							if (nb == 0) break; // cannot write anymore
-						}
-						if (outputBuffers == null) return null;
-						if (outputBuffers.isEmpty()) {
-							// we are done with all data to be sent
-							if (closeAfterLastOutput) {
-								close();
-								return null;
-							}
-							waitToSend = false; // do not wait next time
-							if (dataToSendProvider == null)
-								return null;
-						}
-						// still something to write, we need to register to the network manager
-						manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
-					}
-					return null;
+			synchronized (Client.this) {
+				if (outputBuffers == null) return;
+				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
+					outputBuffers.add(new Pair<>(dataToSendProvider.provide(), dataToSendSP));
+					dataToSendProvider = null;
+					dataToSendSP = null;
 				}
-			}.start();
+				while (outputBuffers != null && !outputBuffers.isEmpty()) {
+					Pair<ByteBuffer,SynchronizationPoint<IOException>> toWrite = outputBuffers.getFirst();
+					int nb;
+					do {
+						try { nb = channel.write(toWrite.getValue1()); }
+						catch (IOException e) {
+							// error while writing
+							close();
+							outputBuffers.removeFirst();
+							if (toWrite.getValue2() != null)
+								toWrite.getValue2().error(e);
+							while (!outputBuffers.isEmpty()) {
+								toWrite = outputBuffers.removeFirst();
+								if (toWrite.getValue2() != null)
+									toWrite.getValue2().error(e);
+							}
+							return;
+						}
+						if (NetworkManager.logger.isDebugEnabled())
+							NetworkManager.logger.debug(nb + " bytes sent on " + channel);
+						if (!toWrite.getValue1().hasRemaining()) {
+							// we are done with this buffer
+							outputBuffers.removeFirst();
+							if (toWrite.getValue2() != null)
+								toWrite.getValue2().unblock();
+							break;
+						}
+					} while (nb > 0);
+					if (nb == 0) break; // cannot write anymore
+				}
+				if (outputBuffers == null) return;
+				if (outputBuffers.isEmpty()) {
+					// we are done with all data to be sent
+					if (closeAfterLastOutput) {
+						close();
+						return;
+					}
+					waitToSend = false; // do not wait next time
+					if (dataToSendProvider == null)
+						return;
+				}
+				// still something to write, we need to register to the network manager
+				manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
+			}
 		}
 		
 		public void newDataToSendWhenPossible(Provider<ByteBuffer> dataProvider, SynchronizationPoint<IOException> sp) {

@@ -113,20 +113,20 @@ public class UDPServer implements Closeable {
 		}
 
 		@Override
-		public boolean received(ByteBuffer buffer, SocketAddress source) {
-			if (!buffer.hasRemaining()) return true;
-			messageListener.newMessage(buffer, source, new MessageSender() {
-				@Override
-				public void reply(ByteBuffer reply) {
-					synchronized (sendQueue) {
-						boolean first = sendQueue.isEmpty();
-						sendQueue.push(new Pair<>(source, reply));
-						if (first)
-							manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
+		public void received(ByteBuffer buffer, SocketAddress source) {
+			if (buffer.hasRemaining())
+				messageListener.newMessage(buffer, source, new MessageSender() {
+					@Override
+					public void reply(ByteBuffer reply) {
+						synchronized (sendQueue) {
+							boolean first = sendQueue.isEmpty();
+							sendQueue.push(new Pair<>(source, reply));
+							if (first)
+								manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
+						}
 					}
-				}
-			});
-			return true;
+				});
+			manager.register(channel, SelectionKey.OP_READ, this, 0);
 		}
 
 		@Override

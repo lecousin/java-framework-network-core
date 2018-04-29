@@ -16,7 +16,6 @@ import java.util.LinkedList;
 import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
@@ -70,41 +69,38 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 
 		@Override
-		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			System.out.println("Received from client: " + data.remaining());
 			Assert.assertTrue(client.getServer() == server || client.getServer() == serverSSL);
-			new Task.Cpu.FromRunnable("Handling client request", Task.PRIORITY_NORMAL, () -> {
-				while (data.hasRemaining()) {
-					StringBuilder msg;
-					if (!client.hasAttribute("reading")) {
-						msg = new StringBuilder();
-						client.setAttribute("reading", msg);
-					} else
-						msg = (StringBuilder)client.getAttribute("reading");
-					byte b = data.get();
-					if (b == '\n') {
-						String s = msg.toString();
-						if (!s.startsWith("I'm ")) {
-							if (!s.equals("flood me")) {
-								client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
-								client.close();
-								break;
-							}
-							for (int i = 0; i < 1000; ++i)
-								client.send(ByteBuffer.allocate(65536));
+			while (data.hasRemaining()) {
+				StringBuilder msg;
+				if (!client.hasAttribute("reading")) {
+					msg = new StringBuilder();
+					client.setAttribute("reading", msg);
+				} else
+					msg = (StringBuilder)client.getAttribute("reading");
+				byte b = data.get();
+				if (b == '\n') {
+					String s = msg.toString();
+					if (!s.startsWith("I'm ")) {
+						if (!s.equals("flood me")) {
+							client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
+							client.close();
 							break;
 						}
-						client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
-						client.removeAttribute("reading");
-						continue;
+						for (int i = 0; i < 1000; ++i)
+							client.send(ByteBuffer.allocate(65536));
+						break;
 					}
-					msg.append((char)b);
+					client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
+					client.removeAttribute("reading");
+					continue;
 				}
-				onbufferavailable.run();
-				try { client.waitForData(10000); }
-				catch (ClosedChannelException e) {}
-			}).start();
-			return false;
+				msg.append((char)b);
+			}
+			onbufferavailable.run();
+			try { client.waitForData(10000); }
+			catch (ClosedChannelException e) {}
 		}
 
 		@Override
@@ -133,18 +129,15 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 
 		@Override
-		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			System.out.println("Received from echo client: " + data.remaining());
-			new Task.Cpu.FromRunnable("Handling client request", Task.PRIORITY_NORMAL, () -> {
-				client.send(data).listenInline(() -> {
-					onbufferavailable.run();
-					try { client.waitForData(10000); }
-					catch (ClosedChannelException e) {
-						e.printStackTrace(System.err);
-					}
-				});
-			}).start();
-			return false;
+			client.send(data).listenInline(() -> {
+				onbufferavailable.run();
+				try { client.waitForData(10000); }
+				catch (ClosedChannelException e) {
+					e.printStackTrace(System.err);
+				}
+			});
 		}
 
 		@Override
@@ -196,10 +189,9 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 
 		@Override
-		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			client.close();
 			onbufferavailable.run();
-			return false;
 		}
 
 		@Override
@@ -229,20 +221,20 @@ public class TestTCP extends AbstractNetworkTest {
 		}
 
 		@Override
-		public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			int block = ((Integer)client.getAttribute("block_counter")).intValue();
 			int index = ((Integer)client.getAttribute("byte_counter")).intValue();
 			while (data.hasRemaining()) {
 				if (block >= NB_BLOCKS) {
 					System.err.println("ERROR: Unexpected data after the end");
 					client.close();
-					return false;
+					return;
 				}
 				byte b = data.get();
 				if (b != (byte)block) {
 					System.err.println("ERROR: Unexpected byte " + b + " at block " + block + " byte " + index + ", expected is " + (byte)block);
 					client.close();
-					return false;
+					return;
 				}
 				if (++index == BLOCK_SIZE) {
 					System.out.println("Block " + block + " received from client.");
@@ -255,9 +247,10 @@ public class TestTCP extends AbstractNetworkTest {
 			onbufferavailable.run();
 			if (block == NB_BLOCKS) {
 				client.send(ByteBuffer.wrap(new byte[] { 'O', 'K', '\n' }));
-				return false;
+				return;
 			}
-			return true;
+			try { client.waitForData(10000); }
+			catch (ClosedChannelException e) {}
 		}
 
 		@Override

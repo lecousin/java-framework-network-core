@@ -9,9 +9,7 @@ import java.util.LinkedList;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
-import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.ssl.SSLLayer;
 
@@ -110,12 +108,7 @@ public class SSLServerProtocol implements ServerProtocol {
 					buf.put(b);
 				buf.flip();
 			}
-			if (protocol.dataReceivedFromClient(client, buf, () -> { }))
-				try {
-					client.waitForData(60000); // TODO get initial timeout
-				} catch (ClosedChannelException e) {
-					// ignore
-				}
+			protocol.dataReceivedFromClient(client, buf, () -> { });
 		}
 		
 		@Override
@@ -144,16 +137,9 @@ public class SSLServerProtocol implements ServerProtocol {
 	}
 	
 	@Override
-	public boolean dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
-		new Task.Cpu<Void,NoException>("Receiving SSL data from client", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
-				ssl.dataReceived(c, data, onbufferavailable);
-				return null;
-			}
-		}.start();
-		return false;
+	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
+		ssl.dataReceived(c, data, onbufferavailable);
 	}
 	
 	@Override

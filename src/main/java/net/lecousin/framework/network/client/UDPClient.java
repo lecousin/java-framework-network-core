@@ -12,9 +12,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.CancelException;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
-import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -37,9 +35,7 @@ public class UDPClient implements Closeable {
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
 		public void channelClosed() {
-			new Task.Cpu.FromRunnable("Close UDP client", Task.PRIORITY_RATHER_LOW, () -> {
-				close();
-			}).start();
+			close();
 		}
 		
 		@Override
@@ -48,55 +44,49 @@ public class UDPClient implements Closeable {
 		
 		@Override
 		public void readyToSend() {
-			new Task.Cpu<Void, NoException>("Sending datagrams to server", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					boolean needsMore = false; 
-					while (true) {
-						Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
-						synchronized (toSend) {
-							if (toSend.isEmpty()) break;
-							p = toSend.getFirst();
-						}
-						int nb;
-						try {
-							synchronized (UDPClient.this) {
-								if (channel == null) throw new ClosedChannelException();
-								nb = channel.send(p.getValue1(), target);
-							}
-						} catch (IOException e) {
-							// error while sending data, just skip it
-							if (p.getValue2() != null)
-								p.getValue2().error(e);
-							synchronized (toSend) {
-								if (!toSend.isEmpty())
-									toSend.removeFirst();
-							}
-							continue;
-						}
-						if (nb == 0) {
-							// cannot write anymore
-							needsMore = true;
-							break;
-						}
-						if (!p.getValue1().hasRemaining()) {
-							if (p.getValue2() != null)
-								p.getValue2().unblock();
-							synchronized (toSend) {
-								if (!toSend.isEmpty())
-									toSend.removeFirst();
-							}
-						}
-					}
-					if (!needsMore) {
-						// no more data to send
-						return null;
-					}
-					// still something to write, we need to register to the network manager
-					manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
-					return null;
+			boolean needsMore = false; 
+			while (true) {
+				Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+				synchronized (toSend) {
+					if (toSend.isEmpty()) break;
+					p = toSend.getFirst();
 				}
-			}.start();
+				int nb;
+				try {
+					synchronized (UDPClient.this) {
+						if (channel == null) throw new ClosedChannelException();
+						nb = channel.send(p.getValue1(), target);
+					}
+				} catch (IOException e) {
+					// error while sending data, just skip it
+					if (p.getValue2() != null)
+						p.getValue2().error(e);
+					synchronized (toSend) {
+						if (!toSend.isEmpty())
+							toSend.removeFirst();
+					}
+					continue;
+				}
+				if (nb == 0) {
+					// cannot write anymore
+					needsMore = true;
+					break;
+				}
+				if (!p.getValue1().hasRemaining()) {
+					if (p.getValue2() != null)
+						p.getValue2().unblock();
+					synchronized (toSend) {
+						if (!toSend.isEmpty())
+							toSend.removeFirst();
+					}
+				}
+			}
+			if (!needsMore) {
+				// no more data to send
+				return;
+			}
+			// still something to write, we need to register to the network manager
+			manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
 		}
 	};
 	
@@ -162,13 +152,15 @@ public class UDPClient implements Closeable {
 	}
 	
 	private class Receiver implements NetworkManager.UDPReceiver {
-		private Receiver(ByteBuffer buffer, AnswerListener listener) {
+		private Receiver(ByteBuffer buffer, AnswerListener listener, int timeout) {
 			this.buffer = buffer;
 			this.listener = listener;
+			this.timeout = timeout;
 		}
 		
 		private ByteBuffer buffer;
 		private AnswerListener listener;
+		private int timeout;
 		
 		@Override
 		public void channelClosed() {
@@ -199,7 +191,7 @@ public class UDPClient implements Closeable {
 		
 		@SuppressFBWarnings("IS2_INCONSISTENT_SYNC")
 		@Override
-		public boolean received(ByteBuffer buffer, SocketAddress source) {
+		public void received(ByteBuffer buffer, SocketAddress source) {
 			AnswerListener l;
 			synchronized (UDPClient.this) {
 				l = listener;
@@ -208,12 +200,12 @@ public class UDPClient implements Closeable {
 			this.buffer = l.dataReceived(buffer);
 			if (this.buffer == null) {
 				close();
-				return false;
+				return;
 			}
 			synchronized (UDPClient.this) {
 				listener = l;
 			}
-			return true;
+			manager.register(channel, SelectionKey.OP_READ, this, timeout);
 		}
 	}
 	
@@ -229,7 +221,7 @@ public class UDPClient implements Closeable {
 			listener.error(e);
 			return;
 		}
-		manager.register(channel, SelectionKey.OP_READ, new Receiver(buffer, listener), timeout);
+		manager.register(channel, SelectionKey.OP_READ, new Receiver(buffer, listener, timeout), timeout);
 	}
 	
 }

@@ -22,7 +22,9 @@ import java.util.Set;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
+import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.util.DebugUtil;
@@ -33,7 +35,8 @@ import org.apache.commons.logging.LogFactory;
 /**
  * The NetworkManager launches a thread to listen to network events using the Java NIO framework,
  * making its usage easier.<br/>
- * The method {@link #register(SelectableChannel, int, Listener)} is used to add a listener to a channel.
+ * The method {@link #register(SelectableChannel, int, Listener)} is used to add a listener to a channel.<br/>
+ * The listeners are called in separate CPU tasks to avoid slowing down the NetworkManager's thread.
  */
 public class NetworkManager implements Closeable {
 
@@ -42,8 +45,6 @@ public class NetworkManager implements Closeable {
 	
 	/**
 	 * Base interface for a listener, with a channelClosed event.
-	 * Because the NetworkManager is mono-thread, all implementations MUST keep the methods
-	 * as fast as possible, and should be limited to only launching a CPU task handling the event.
 	 */
 	public static interface Listener {
 		/** Called when the associated channel has been closed. */
@@ -52,8 +53,6 @@ public class NetworkManager implements Closeable {
 
 	/**
 	 * Interface for a server listener, with newClient and acceptError events.
-	 * Because the NetworkManager is mono-thread, all implementations MUST keep the methods
-	 * as fast as possible, and should be limited to only launching a CPU task handling the event.
 	 */
 	public static interface Server extends Listener {
 		/** Called when a new client is connected. */
@@ -65,8 +64,6 @@ public class NetworkManager implements Closeable {
 
 	/**
 	 * Interface for a client listener, with connected and connectionFailed events.
-	 * Because the NetworkManager is mono-thread, all implementations MUST keep the methods
-	 * as fast as possible, and should be limited to only launching a CPU task handling the event.
 	 */
 	public static interface Client extends Listener {
 		/** Called once the client has been connected to the server. */
@@ -78,11 +75,12 @@ public class NetworkManager implements Closeable {
 	
 	/**
 	 * Interface for a receiver listener, with events related to receiving data from the network.
-	 * Because the NetworkManager is mono-thread, all implementations MUST keep the methods
-	 * as fast as possible, and should be limited to only launching a CPU task handling the event.
 	 */
 	public static interface Receiver extends Listener {
-		/** Ask to allocate a buffer to receive data. This allows to allocate an amount of bytes according to what is expected. */
+		/** Ask to allocate a buffer to receive data.
+		 * This allows to allocate an amount of bytes according to what is expected.
+		 * Because it is directly called by the NetworkManager's thread, it must be as fast as possible.
+		 */
 		public ByteBuffer allocateReceiveBuffer();
 		
 		/** Called when an error occus while receiving data. The buffer may be null in case of timeout. */
@@ -92,7 +90,7 @@ public class NetworkManager implements Closeable {
 	/** TCP receiver. */
 	public static interface TCPReceiver extends Receiver {
 		/** Called when some data has been received. */
-		public boolean received(ByteBuffer buffer);
+		public void received(ByteBuffer buffer);
 		
 		/** Called when no more data can be received. */
 		public void endOfInput(ByteBuffer buffer);
@@ -100,19 +98,15 @@ public class NetworkManager implements Closeable {
 	
 	/** UDP receiver. */
 	public static interface UDPReceiver extends Receiver {
-		/** Called when data has been received, return true to continue receiving data, or false if no more data is expected. */
-		public boolean received(ByteBuffer buffer, SocketAddress source);
+		/** Called when data has been received. */
+		public void received(ByteBuffer buffer, SocketAddress source);
 	}
 
 	/**
 	 * Interface for a sender listener, with an event readyToSend.
-	 * Because the NetworkManager is mono-thread, all implementations MUST keep the methods
-	 * as fast as possible, and should be limited to only launching a CPU task handling the event.
 	 */
 	public static interface Sender extends Listener {
-		/** Called when the associated network channel is ready to send data over the network.
-		 * The implementation should launch a task to send data in order to let the NetworkManager thread continue working.
-		 */
+		/** Called when the associated network channel is ready to send data over the network. */
 		public void readyToSend();
 		
 		/** Called if a timeout was specified when registering, and the channel is not yet ready to send
@@ -208,10 +202,10 @@ public class NetworkManager implements Closeable {
 		}
 		
 		public void channelClosed() {
-			if (onAccept != null) onAccept.channelClosed();
-			if (onConnect != null) onConnect.channelClosed();
-			if (onRead != null) onRead.channelClosed();
-			if (onWrite != null) onWrite.channelClosed();
+			if (onAccept != null) NetworkManager.channelClosed(onAccept);
+			if (onConnect != null) NetworkManager.channelClosed(onConnect);
+			if (onRead != null) NetworkManager.channelClosed(onRead);
+			if (onWrite != null) NetworkManager.channelClosed(onWrite);
 		}
 	}
 	
@@ -276,65 +270,7 @@ public class NetworkManager implements Closeable {
 			NetworkSecurity.init();
 			int loopCount = 0;
 			while (!stop) {
-				do {
-					RegisterRequest req;
-					synchronized (requests) {
-						req = requests.pollFirst();
-					}
-					if (req == null) break;
-					try {
-						SelectionKey key = req.channel.keyFor(selector);
-						if (key == null) {
-							Attachment listeners = new Attachment();
-							listeners.set(req.newOps, req.listener, req.timeout);
-							key = req.channel.register(selector, req.newOps, listeners);
-							req.result.unblockSuccess(key);
-						} else {
-							Attachment listeners = (Attachment)key.attachment();
-							try {
-								int curOps = key.interestOps();
-								int conflict = curOps & req.newOps;
-								if (conflict == 0) {
-									key.interestOps(curOps | req.newOps);
-									listeners.set(req.newOps, req.listener, req.timeout);
-									req.result.unblockSuccess(key);
-								} else {
-									req.result.unblockError(new IOException("Operation already registered"));
-									try {
-										if ((conflict & SelectionKey.OP_ACCEPT) != 0)
-											((Server)req.listener).acceptError(
-											new IOException("Already registered for accept operation"));
-										if ((conflict & SelectionKey.OP_CONNECT) != 0)
-											((Client)req.listener).connectionFailed(
-											new IOException("Already registered for connect operation"));
-										if ((conflict & SelectionKey.OP_READ) != 0)
-											((Receiver)req.listener).receiveError(
-										new IOException("Already registered for read operation"), null);
-										if ((conflict & SelectionKey.OP_WRITE) != 0)
-											logger.error(
-											new IOException("Already registered for write operation"));
-									} catch (Throwable t) {
-										logger.error("Error calling listener", t);
-									}
-								}
-							} catch (CancelledKeyException e) {
-								try { listeners.channelClosed(); }
-								catch (Throwable t) {
-									logger.error("Error calling channelClosed", t);
-								}
-								req.result.error(IO.error(e));
-							}
-						}
-					} catch (ClosedChannelException e) {
-						if (req.listener != null)
-							try { req.listener.channelClosed(); }
-							catch (Throwable t) {
-								logger.error("Error calling channelClosed", t);
-							}
-						req.result.error(e);
-					}
-					if (stop) break;
-				} while (true);
+				processRegisterRequests();
 				if (stop) break;
 				Set<SelectionKey> keys = selector.selectedKeys();
 				if (!keys.isEmpty()) {
@@ -355,19 +291,9 @@ public class NetworkManager implements Closeable {
 							try {
 								@SuppressWarnings("resource")
 								SocketChannel client = ((ServerSocketChannel)key.channel()).accept();
-								InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
-								if (!NetworkSecurity.acceptAddress(addr.getAddress())) {
-									if (logger.isDebugEnabled())
-										logger.debug("Client rejected: " + addr);
-									client.close();
-								} else {
-									if (logger.isDebugEnabled())
-										logger.debug("New client connected: " + client.toString());
-									client.configureBlocking(false);
-									server.newClient(client);
-								}
+								acceptClient(server, client);
 							} catch (Throwable e) {
-								server.acceptError(IO.error(e));
+								acceptError(server, e);
 							}
 						}
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
@@ -379,12 +305,12 @@ public class NetworkManager implements Closeable {
 								((SocketChannel)key.channel()).finishConnect();
 								key.interestOps(0);
 								listeners.reset();
-								client.connected();
+								connected(client);
 							} catch (Throwable e) {
 								if (logger.isInfoEnabled())
 									logger.info("Connection failed: " + key.channel().toString());
 								key.cancel();
-								client.connectionFailed(IO.error(e));
+								connectionFailed(client, e);
 								continue;
 							}
 						}
@@ -403,51 +329,36 @@ public class NetworkManager implements Closeable {
 												+ key.channel().toString());
 										key.interestOps(0);
 										listeners.reset();
-										tcp.endOfInput(buffer);
+										endOfInput(tcp, buffer);
 									} else {
-										buffer.flip();
-										if (dataLogger.isTraceEnabled()) {
-											StringBuilder s = new StringBuilder(nb * 5 + 256);
-											s.append(nb).append(" bytes received on ");
-											s.append(key.channel().toString());
-											s.append("\r\n");
-											DebugUtil.dumpHex(s, buffer);
-											dataLogger.trace(s.toString());
+										dataReceived(tcp, buffer, nb, key.channel());
+										try {
+											int iops = key.interestOps();
+											key.interestOps(iops - (iops & SelectionKey.OP_READ));
+										} catch (CancelledKeyException e) {
+											// ignore
 										}
-										if (!tcp.received(buffer)) {
-											try {
-												int iops = key.interestOps();
-												key.interestOps(iops - (iops & SelectionKey.OP_READ));
-											} catch (CancelledKeyException e) {
-												// ignore
-											}
-											listeners.onRead = null;
-											listeners.onReadTimeout = 0;
-										} else
-											listeners.readStart = System.currentTimeMillis();
+										listeners.onRead = null;
+										listeners.onReadTimeout = 0;
 									}
 								} else {
 									UDPReceiver udp = (UDPReceiver)receiver;
 									SocketAddress source = ((DatagramChannel)key.channel()).receive(buffer);
-									buffer.flip();
-									if (!udp.received(buffer, source)) {
-										try {
-											int iops = key.interestOps();
-											key.interestOps(iops - (iops & SelectionKey.OP_READ));
-											listeners.onRead = null;
-											listeners.onReadTimeout = 0;
-										} catch (CancelledKeyException e) {
-											/* ignore */
-										}
-									} else
-										listeners.readStart = System.currentTimeMillis();
+									dataReceived(udp, buffer, source);
+									try {
+										int iops = key.interestOps();
+										key.interestOps(iops - (iops & SelectionKey.OP_READ));
+										listeners.onRead = null;
+										listeners.onReadTimeout = 0;
+									} catch (CancelledKeyException e) {
+										/* ignore */
+									}
 								}
 							} catch (Throwable e) {
 								if (logger.isErrorEnabled())
 									logger.error("Error while receiving data from network on "
 										+ key.channel().toString(), e);
-								try { receiver.receiveError(IO.error(e), buffer); }
-								catch (Throwable t) { logger.error("Error", t); }
+								receiveError(receiver, e, buffer);
 								try { key.interestOps(0); }
 								catch (CancelledKeyException e2) { /* ignore */ }
 								catch (Throwable t) { logger.error("Error", t); }
@@ -465,10 +376,10 @@ public class NetworkManager implements Closeable {
 								listeners.onWriteTimeout = 0;
 								if (logger.isTraceEnabled())
 									logger.trace("Socket ready to send data on " + key.channel());
-								sender.readyToSend();
+								readyToSend(sender);
 							} catch (Throwable t) {
 								if (logger.isErrorEnabled())
-									logger.error("Error while calling sender", t);
+									logger.error("Error with channel ready to send", t);
 							}
 						}
 					}
@@ -511,6 +422,59 @@ public class NetworkManager implements Closeable {
 		}
 	}
 	
+	private void processRegisterRequests() {
+		do {
+			RegisterRequest req;
+			synchronized (requests) {
+				req = requests.pollFirst();
+			}
+			if (req == null) break;
+			try {
+				SelectionKey key = req.channel.keyFor(selector);
+				if (key == null) {
+					Attachment listeners = new Attachment();
+					listeners.set(req.newOps, req.listener, req.timeout);
+					key = req.channel.register(selector, req.newOps, listeners);
+					req.result.unblockSuccess(key);
+					continue;
+				}
+				Attachment listeners = (Attachment)key.attachment();
+				try {
+					int curOps = key.interestOps();
+					int conflict = curOps & req.newOps;
+					if (conflict == 0) {
+						key.interestOps(curOps | req.newOps);
+						listeners.set(req.newOps, req.listener, req.timeout);
+						req.result.unblockSuccess(key);
+						continue;
+					}
+					req.result.unblockError(new IOException("Operation already registered"));
+					try {
+						if ((conflict & SelectionKey.OP_ACCEPT) != 0)
+							acceptError((Server)req.listener, new IOException("Already registered for accept operation"));
+						if ((conflict & SelectionKey.OP_CONNECT) != 0)
+							connectionFailed((Client)req.listener,
+								new IOException("Already registered for connect operation"));
+						if ((conflict & SelectionKey.OP_READ) != 0)
+							receiveError((Receiver)req.listener,
+								new IOException("Already registered for read operation"), null);
+						if ((conflict & SelectionKey.OP_WRITE) != 0)
+							logger.error(new IOException("Already registered for write operation"));
+					} catch (Throwable t) {
+						logger.error("Error calling listener", t);
+					}
+				} catch (CancelledKeyException e) {
+					listeners.channelClosed();
+					req.result.error(IO.error(e));
+				}
+			} catch (ClosedChannelException e) {
+				if (req.listener != null)
+					channelClosed(req.listener);
+				req.result.error(e);
+			}
+		} while (!stop);
+	}
+	
 	private long checkTimeouts() {
 		long now = System.currentTimeMillis();
 		long nextTimeout = 0;
@@ -519,7 +483,7 @@ public class NetworkManager implements Closeable {
 			Attachment listeners = (Attachment)key.attachment();
 			if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
 				if (now > listeners.connectStart + listeners.onConnectTimeout) {
-					listeners.onConnect.connectionFailed(
+					connectionFailed(listeners.onConnect,
 						new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
 					key.cancel();
 					continue;
@@ -529,7 +493,7 @@ public class NetworkManager implements Closeable {
 			}
 			if (listeners.onRead != null && listeners.onReadTimeout > 0) {
 				if (now > listeners.readStart + listeners.onReadTimeout) {
-					listeners.onRead.receiveError(
+					receiveError(listeners.onRead,
 						new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
 					try { key.interestOps(0); }
 					catch (CancelledKeyException e2) { /* ignore */ }
@@ -549,7 +513,7 @@ public class NetworkManager implements Closeable {
 					Sender sender = listeners.onWrite;
 					listeners.onWrite = null;
 					listeners.onWriteTimeout = 0;
-					sender.sendTimeout();
+					sendTimeout(sender);
 					continue;
 				}
 				if (listeners.writeStart + listeners.onWriteTimeout > nextTimeout)
@@ -557,6 +521,140 @@ public class NetworkManager implements Closeable {
 			}
 		}
 		return nextTimeout;
+	}
+	
+	private static void acceptClient(Server server, SocketChannel client) {
+		new Task.Cpu<Void, NoException>("Accept network client", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				try {
+					InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
+					if (!NetworkSecurity.acceptAddress(addr.getAddress())) {
+						if (logger.isDebugEnabled())
+							logger.debug("Client rejected: " + addr);
+						client.close();
+					} else {
+						if (logger.isDebugEnabled())
+							logger.debug("New client connected: " + client.toString());
+						client.configureBlocking(false);
+						server.newClient(client);
+					}
+				} catch (Throwable e) {
+					server.acceptError(IO.error(e));
+				}
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void acceptError(Server server, Throwable error) {
+		new Task.Cpu<Void, NoException>("Call Server.acceptError", Task.PRIORITY_RATHER_LOW) {
+			@Override
+			public Void run() {
+				server.acceptError(IO.error(error));
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void connected(Client client) {
+		new Task.Cpu<Void, NoException>("Call Client.connected", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				client.connected();
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void connectionFailed(Client client, Throwable error) {
+		new Task.Cpu<Void, NoException>("Call Client.connectionFailed", Task.PRIORITY_RATHER_LOW) {
+			@Override
+			public Void run() {
+				client.connectionFailed(IO.error(error));
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
+		new Task.Cpu<Void, NoException>("Call TCPReceiver.received", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				buffer.flip();
+				if (dataLogger.isTraceEnabled()) {
+					StringBuilder s = new StringBuilder(nb * 5 + 256);
+					s.append(nb).append(" bytes received on ");
+					s.append(channel.toString());
+					s.append("\r\n");
+					DebugUtil.dumpHex(s, buffer);
+					dataLogger.trace(s.toString());
+				}
+				receiver.received(buffer);
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void dataReceived(UDPReceiver receiver, ByteBuffer buffer, SocketAddress source) {
+		new Task.Cpu<Void, NoException>("Call UDPReceiver.received", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				buffer.flip();
+				receiver.received(buffer, source);
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void endOfInput(TCPReceiver receiver, ByteBuffer buffer) {
+		new Task.Cpu<Void, NoException>("Call TCPReceiver.endOfInput", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				receiver.endOfInput(buffer);
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void receiveError(Receiver client, Throwable error, ByteBuffer buffer) {
+		new Task.Cpu<Void, NoException>("Call Receiver.receiveError", Task.PRIORITY_RATHER_LOW) {
+			@Override
+			public Void run() {
+				client.receiveError(IO.error(error), buffer);
+				return null;
+			}
+		}.start();
+	}
+
+	private static void readyToSend(Sender sender) {
+		new Task.Cpu<Void, NoException>("Call Sender.readyToSend", Task.PRIORITY_NORMAL) {
+			@Override
+			public Void run() {
+				sender.readyToSend();
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void sendTimeout(Sender sender) {
+		new Task.Cpu<Void, NoException>("Call Sender.sendTimeout", Task.PRIORITY_RATHER_LOW) {
+			@Override
+			public Void run() {
+				sender.sendTimeout();
+				return null;
+			}
+		}.start();
+	}
+	
+	private static void channelClosed(Listener listener) {
+		new Task.Cpu<Void, NoException>("Call Listener.channelClosed", Task.PRIORITY_RATHER_LOW) {
+			@Override
+			public Void run() {
+				listener.channelClosed();
+				return null;
+			}
+		}.start();
 	}
 	
 }
