@@ -368,15 +368,17 @@ public class NetworkManager implements Closeable {
 							}
 						}
 						if ((ops & SelectionKey.OP_WRITE) != 0) {
+							Sender sender = listeners.onWrite;
 							try {
 								int iops = key.interestOps();
 								key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
-								Sender sender = listeners.onWrite;
 								listeners.onWrite = null;
 								listeners.onWriteTimeout = 0;
 								if (logger.isTraceEnabled())
 									logger.trace("Socket ready to send data on " + key.channel());
 								readyToSend(sender);
+							} catch (CancelledKeyException e) {
+								channelClosed(sender);
 							} catch (Throwable t) {
 								if (logger.isErrorEnabled())
 									logger.error("Error with channel ready to send", t);
