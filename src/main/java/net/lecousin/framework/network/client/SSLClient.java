@@ -253,7 +253,7 @@ public class SSLClient extends TCPClient {
 			@SuppressWarnings("unchecked")
 			@Override
 			public Void run() {
-				if (receive.hasError()) {
+				if (!receive.isSuccessful()) {
 					LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list;
 					synchronized (sslClient) {
 						list = (LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>>)
@@ -261,18 +261,10 @@ public class SSLClient extends TCPClient {
 					}
 					if (list != null)
 						for (Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer> t : list)
-							t.getValue1().error(receive.getError());
-					return null;
-				}
-				if (receive.isCancelled()) {
-					LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>> list;
-					synchronized (sslClient) {
-						list = (LinkedList<Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer>>)
-							removeAttribute(WAITING_DATA_ATTRIBUTE);
-					}
-					if (list != null)
-						for (Triple<AsyncWork<ByteBuffer, IOException>, Integer, Integer> t : list)
-							t.getValue1().cancel(receive.getCancelEvent());
+							if (receive.hasError())
+								t.getValue1().error(receive.getError());
+							else
+								t.getValue1().cancel(receive.getCancelEvent());
 					return null;
 				}
 				ByteBuffer b = receive.getResult();

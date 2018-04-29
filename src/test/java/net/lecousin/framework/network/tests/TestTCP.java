@@ -535,6 +535,9 @@ public class TestTCP extends AbstractNetworkTest {
 					} while (true);
 				}
 			};
+			// wait few seconds so the server is filling the socket buffer
+			try { Thread.sleep(2000); }
+			catch (InterruptedException e) {}
 			read.set(client.getReceiver().readBytes(BLOCK_SIZE, 10000));
 			read.get().listenInline(listener);
 			end.blockThrow(0);

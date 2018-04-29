@@ -10,10 +10,8 @@ import java.nio.channels.SocketChannel;
 import java.util.HashMap;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.AsyncWork.AsyncWorkListener;
 import net.lecousin.framework.concurrent.synch.AsyncWork.AsyncWorkListenerReady;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
@@ -289,15 +287,13 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					io.write(b);
 				} while (remainingRead.hasRemaining());
 			}
-			client.receiveData(initialBufferSize, timeout).listenInline(new AsyncWorkListener<ByteBuffer, IOException>() {
-				@Override
-				public void ready(ByteBuffer result) {
+			client.receiveData(initialBufferSize, timeout).listenInline(
+				new AsyncWorkListenerReady<ByteBuffer, IOException>((result, that) -> {
 					if (result == null) {
 						res.unblockError(new IOException("End of data after " + io.getPosition()
 							+ " bytes read, while waiting for an end marker byte " + endMarker));
 						return;
 					}
-					AsyncWorkListener<ByteBuffer, IOException> that = this;
 					new Task.Cpu<Void, NoException>("TCPClient.readUntil", Task.PRIORITY_RATHER_IMPORTANT) {
 						@Override
 						public Void run() {
@@ -316,18 +312,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							return null;
 						}
 					}.start();
-				}
-				
-				@Override
-				public void error(IOException error) {
-					res.unblockError(error);
-				}
-				
-				@Override
-				public void cancelled(CancelException event) {
-					res.unblockCancel(event);
-				}
-			});
+				}, res));
 			return res;
 		}
 		

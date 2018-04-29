@@ -164,17 +164,15 @@ public class UDPClient implements Closeable {
 		
 		@Override
 		public void channelClosed() {
-			AnswerListener l;
-			synchronized (UDPClient.this) {
-				close();
-				l = listener;
-				listener = null;
-			}
-			if (l != null) l.error(new ClosedChannelException());
+			error(new ClosedChannelException());
 		}
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
+			error(error);
+		}
+		
+		private void error(IOException error) {
 			AnswerListener l;
 			synchronized (UDPClient.this) {
 				close();
