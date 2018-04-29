@@ -489,6 +489,7 @@ public class TestTCP extends AbstractNetworkTest {
 	public void testSendDataClientToServer() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 			TCPClient client = new TCPClient();
 			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9995), 10000);
 			sp.blockThrow(0);
@@ -496,6 +497,7 @@ public class TestTCP extends AbstractNetworkTest {
 			expect(client, "OK");
 			client.close();
 		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		}
 	}
@@ -504,6 +506,7 @@ public class TestTCP extends AbstractNetworkTest {
 	public void testSendDataServerToClient() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 			TCPClient client = new TCPClient();
 			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9996), 10000);
 			sp.blockThrow(0);
@@ -551,6 +554,7 @@ public class TestTCP extends AbstractNetworkTest {
 				client.close();
 			}
 		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		}
 	}
