@@ -16,21 +16,18 @@ import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.LockPoint;
 import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.AttributesContainer;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 /**
  * SSL implementation.
  */
 public class SSLLayer {
-	
-	public static final Log logger = LogFactory.getLog(SSLLayer.class);	
 	
 	/** Interface to implement for a TCP connection on which an SSL layer is added. */
 	public static interface TCPConnection extends AttributesContainer {
@@ -64,6 +61,7 @@ public class SSLLayer {
 	/** Constructor. */
 	public SSLLayer(SSLContext context) {
 		this.context = context;
+		this.logger = LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class);
 	}
 
 	/** Constructor. */
@@ -71,6 +69,7 @@ public class SSLLayer {
 		this(SSLContext.getDefault());
 	}
 	
+	private Logger logger;
 	private SSLContext context;
 	private List<String> hostNames = null;
 	
@@ -139,7 +138,7 @@ public class SSLLayer {
 				SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 				ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
 				do {
-					if (logger.isDebugEnabled())
+					if (logger.debug())
 						logger.debug("SSL Handshake status for connection: "
 							+ engine.getHandshakeStatus().name() + ", current input buffer: "
 							+ inputBuffer.position() + " on " + conn);
@@ -151,7 +150,7 @@ public class SSLLayer {
 					case NEED_TASK: {
 							do {
 								Runnable task = engine.getDelegatedTask();
-								if (logger.isDebugEnabled())
+								if (logger.debug())
 									logger.debug("Task to run: " + task);
 								if (task == null) break;
 								Task<Void,NoException> t = new Task.Cpu.FromRunnable(
@@ -160,7 +159,7 @@ public class SSLLayer {
 								t.getOutput().listenInline(new Runnable() {
 									@Override
 									public void run() {
-										if (logger.isDebugEnabled())
+										if (logger.debug())
 											logger.debug("Task done: " + task);
 										followup(conn);
 									}
@@ -187,7 +186,7 @@ public class SSLLayer {
 					case NEED_UNWRAP:
 						synchronized (inputBuffer) {
 							if (inputBuffer.position() == 0) {
-								if (logger.isDebugEnabled())
+								if (logger.debug())
 									logger.debug(
 										"No data to unwrap, wait for more data from connection");
 								try { conn.waitForData(); }
@@ -205,7 +204,7 @@ public class SSLLayer {
 								SSLEngineResult result;
 								try { result = engine.unwrap(inputBuffer, dst); }
 								catch (SSLException e) {
-									if (logger.isErrorEnabled())
+									if (logger.error())
 										logger.error("Cannot unwrap SSL data from connection "
 											+ conn, e);
 									conn.handshakeError(e);
@@ -213,7 +212,7 @@ public class SSLLayer {
 									return null;
 								}
 								if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
-									if (logger.isDebugEnabled())
+									if (logger.debug())
 										logger.debug(
 											"Cannot unwrap, wait for more data from connection");
 									inputBuffer.compact();
@@ -225,7 +224,7 @@ public class SSLLayer {
 									return null;
 								}
 								if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-									if (logger.isDebugEnabled())
+									if (logger.debug())
 										logger.debug(
 											"Cannot unwrap because buffer is too small, enlarge it");
 									ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
@@ -234,7 +233,7 @@ public class SSLLayer {
 									dst = b;
 									continue;
 								}
-								if (logger.isDebugEnabled())
+								if (logger.debug())
 									logger.debug(dst.position()
 										+ " unwrapped from SSL, remaining input: " + inputBuffer.remaining());
 								inputBuffer.compact();
@@ -273,13 +272,13 @@ public class SSLLayer {
 		if (task != null) {
 			synchronized (task) {
 				if (!task.isRunning() && !task.isDone()) {
-					if (logger.isDebugEnabled())
+					if (logger.debug())
 						logger.debug("Followup task already existing, just wait for connection " + conn);
 					return; // not yet started, no need to create a new task
 				}
 			}
 		}
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Starting followup task for handshaking for connection " + conn);
 		task = new HandshakeFollowup(conn);
 		conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
@@ -292,7 +291,7 @@ public class SSLLayer {
 	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("SSL data received from connection " + conn + ": "
 				+ data.remaining() + " bytes (" + inputBuffer.position() + " already in input buffer)");
 		synchronized (inputBuffer) {
@@ -323,9 +322,9 @@ public class SSLLayer {
 	}
 	
 	// must be called synchronized on inputBuffer
-	private static void dataReceived(TCPConnection conn, SSLEngine engine, ByteBuffer inputBuffer) {
+	private void dataReceived(TCPConnection conn, SSLEngine engine, ByteBuffer inputBuffer) {
 		inputBuffer.flip();
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Decrypting " + inputBuffer.remaining() + " bytes from SSL connection " + conn);
 		LinkedList<ByteBuffer> buffers = new LinkedList<ByteBuffer>();
 		while (inputBuffer.hasRemaining()) {
@@ -334,7 +333,7 @@ public class SSLLayer {
 			SSLEngineResult result;
 			try { result = engine.unwrap(inputBuffer, dst); }
 			catch (SSLException e) {
-				if (logger.isErrorEnabled())
+				if (logger.error())
 					logger.error("Error decrypting data from SSL connection", e);
 				conn.close();
 				return;
@@ -342,7 +341,7 @@ public class SSLLayer {
 			if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
 				if (!buffers.isEmpty())
 					conn.dataReceived(buffers);
-				if (logger.isDebugEnabled())
+				if (logger.debug())
 					logger.debug("Not enough data to decrypt, wait for new data from SSL connection " + conn);
 				inputBuffer.compact();
 				try { conn.waitForData(); }
@@ -350,7 +349,7 @@ public class SSLLayer {
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-				if (logger.isDebugEnabled())
+				if (logger.debug())
 					logger.debug("Output buffer too small to decrypt data, try again with larger one");
 				ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
 				dst.flip();
@@ -360,7 +359,7 @@ public class SSLLayer {
 			}
 			// data ready
 			dst.flip();
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug(dst.remaining() + " bytes decrypted from SSL connection " + conn);
 			buffers.add(dst);
 		}
@@ -371,7 +370,7 @@ public class SSLLayer {
 	/** Encrypt the given data. */
 	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, ByteBuffer data) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Encrypting " + data.remaining() + " bytes for SSL connection " + conn);
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		ByteBuffer dst = null;
@@ -380,7 +379,7 @@ public class SSLLayer {
 			SSLEngineResult result;
 			try { result = engine.wrap(data, dst); }
 			catch (SSLException e) {
-				if (logger.isErrorEnabled())
+				if (logger.error())
 					logger.error("Error encrypting data for SSL client", e);
 				conn.close();
 				return null;
@@ -394,7 +393,7 @@ public class SSLLayer {
 			}
 			dst.flip();
 			buffers.add(dst);
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug(result.bytesConsumed() + " bytes encrypted into "
 					+ dst.remaining() + " bytes for SSL connection " + conn);
 			dst = null;

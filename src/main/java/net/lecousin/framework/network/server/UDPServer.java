@@ -57,13 +57,13 @@ public class UDPServer implements Closeable {
 	public void close() {
 		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
 		for (Channel channel : channels) {
-			if (NetworkManager.logger.isInfoEnabled())
-				NetworkManager.logger.info("Closing UDP server: " + channel.channel.toString());
+			if (manager.getLogger().info())
+				manager.getLogger().info("Closing UDP server: " + channel.channel.toString());
 			channel.key.cancel();
 			try { channel.channel.close(); }
 			catch (IOException e) {
-				if (NetworkManager.logger.isErrorEnabled())
-					NetworkManager.logger.error("Error closing UDP server", e);
+				if (manager.getLogger().error())
+					manager.getLogger().error("Error closing UDP server", e);
 			}
 			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
@@ -84,8 +84,8 @@ public class UDPServer implements Closeable {
 		catch (Exception e) { throw IO.error(e); }
 		channels.add(c);
 		local = channel.getLocalAddress();
-		if (NetworkManager.logger.isInfoEnabled())
-			NetworkManager.logger.info("New UDP server listening on " + local.toString());
+		if (manager.getLogger().info())
+			manager.getLogger().info("New UDP server listening on " + local.toString());
 		return local;
 	}
 	

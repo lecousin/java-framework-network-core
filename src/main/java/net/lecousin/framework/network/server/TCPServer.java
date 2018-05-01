@@ -82,8 +82,8 @@ public class TCPServer implements Closeable {
 		catch (Exception e) { throw IO.error(e); }
 		channels.add(sc);
 		local = channel.getLocalAddress();
-		if (NetworkManager.logger.isInfoEnabled())
-			NetworkManager.logger.info("New TCP server listening on " + local.toString());
+		if (manager.getLogger().info())
+			manager.getLogger().info("New TCP server listening on " + local.toString());
 		return local;
 	}
 	
@@ -91,13 +91,13 @@ public class TCPServer implements Closeable {
 	public void unbindAll() {
 		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
 		for (ServerChannel channel : channels) {
-			if (NetworkManager.logger.isInfoEnabled())
-				NetworkManager.logger.info("Closing TCP server: " + channel.channel.toString());
+			if (manager.getLogger().info())
+				manager.getLogger().info("Closing TCP server: " + channel.channel.toString());
 			channel.key.cancel();
 			try { channel.channel.close(); }
 			catch (IOException e) {
-				if (NetworkManager.logger.isErrorEnabled())
-					NetworkManager.logger.error("Error closing TCP server", e);
+				if (manager.getLogger().error())
+					manager.getLogger().error("Error closing TCP server", e);
 			}
 			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
@@ -132,15 +132,15 @@ public class TCPServer implements Closeable {
 
 		@Override
 		public void channelClosed() {
-			if (NetworkManager.logger.isInfoEnabled())
-				NetworkManager.logger.info("TCP server closed on channel " + channel.toString());
+			if (manager.getLogger().info())
+				manager.getLogger().info("TCP server closed on channel " + channel.toString());
 		}
 		
 		
 		@Override
 		public void acceptError(IOException error) {
-			if (NetworkManager.logger.isInfoEnabled())
-				NetworkManager.logger.info("Error accepting client on channel " + channel.toString(), error);
+			if (manager.getLogger().info())
+				manager.getLogger().info("Error accepting client on channel " + channel.toString(), error);
 		}
 	}
 	
@@ -168,8 +168,8 @@ public class TCPServer implements Closeable {
 		@Override
 		public synchronized void close() {
 			if (channel == null) return;
-			if (NetworkManager.logger.isDebugEnabled())
-				NetworkManager.logger.debug("Client closed: " + channel);
+			if (manager.getLogger().debug())
+				manager.getLogger().debug("Client closed: " + channel);
 			if (channel.isOpen())
 				try { channel.close(); }
 				catch (Throwable e) { /* ignore */ }
@@ -249,11 +249,11 @@ public class TCPServer implements Closeable {
 				while (buffer != null || !buffers.isEmpty()) {
 					if (buffer == null)
 						buffer = buffers.removeFirst();
-					if (NetworkManager.dataLogger.isTraceEnabled()) {
+					if (manager.getDataLogger().trace()) {
 						StringBuilder s = new StringBuilder(128 + buffer.remaining() * 5);
 						s.append("Sending ").append(buffer.remaining()).append(" bytes to client:\r\n");
 						DebugUtil.dumpHex(s, buffer);
-						NetworkManager.dataLogger.trace(s.toString());
+						manager.getDataLogger().trace(s.toString());
 					}
 					int nb;
 					try { nb = channel.write(buffer); }
@@ -262,7 +262,7 @@ public class TCPServer implements Closeable {
 						close();
 						return new SynchronizationPoint<>(e);
 					}
-					if (NetworkManager.logger.isDebugEnabled()) NetworkManager.logger.debug(nb + " bytes sent on " + channel);
+					if (manager.getLogger().debug()) manager.getLogger().debug(nb + " bytes sent on " + channel);
 					if (!buffer.hasRemaining()) {
 						// done with this buffer
 						buffer = null;
@@ -316,8 +316,8 @@ public class TCPServer implements Closeable {
 							}
 							return;
 						}
-						if (NetworkManager.logger.isDebugEnabled())
-							NetworkManager.logger.debug(nb + " bytes sent on " + channel);
+						if (manager.getLogger().debug())
+							manager.getLogger().debug(nb + " bytes sent on " + channel);
 						if (!toWrite.getValue1().hasRemaining()) {
 							// we are done with this buffer
 							outputBuffers.removeFirst();

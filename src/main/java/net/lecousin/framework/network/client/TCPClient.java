@@ -9,6 +9,8 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.HashMap;
 
+import net.lecousin.framework.application.Application;
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
@@ -20,6 +22,7 @@ import net.lecousin.framework.event.SimpleEvent;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
+import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.AttributesContainer;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -28,23 +31,21 @@ import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
 import net.lecousin.framework.util.Provider;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
 /**
  * TCP client, connected to a server using TCP protocol (using sockets).
  * It uses the {@link NetworkManager} to make asynchronous operations.<br/>
  */
 public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	
-	public static final Log logger = LogFactory.getLog(TCPClient.class);
-
 	/** Constcutor. */
 	public TCPClient() {
-		manager = NetworkManager.get();
+		Application app = LCCore.getApplication();
+		manager = NetworkManager.get(app);
+		logger = app.getLoggerFactory().getLogger(TCPClient.class);
 	}
 	
 	protected NetworkManager manager;
+	protected Logger logger;
 	protected SocketChannel channel;
 	protected boolean closed = true;
 	protected SynchronizationPoint<IOException> spConnect;
@@ -83,7 +84,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 
 	protected void channelClosed() {
 		if (closed) return;
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Channel closed - client closed");
 		closed = true;
 		if (spConnect != null) spConnect.error(new ClosedChannelException());
@@ -105,7 +106,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void connected() {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Client connected");
 			spConnect.unblock();
 			spConnect = null;
@@ -113,7 +114,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void connectionFailed(IOException error) {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Client connection error", error);
 			closed = true;
 			spConnect.error(error);
@@ -125,14 +126,14 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void received(ByteBuffer buffer) {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Client received " + buffer.remaining() + " bytes");
 			reading.unblockSuccess(buffer);
 		}
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Client receive error", error);
 			reading.unblockError(error);
 		}
@@ -144,7 +145,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void endOfInput(ByteBuffer buffer) {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Client end of input");
 			buffer.flip();
 			endOfInput = true;
@@ -157,7 +158,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	/** Connect this client to the server at the given address. */
 	@SuppressWarnings("unchecked")
 	public SynchronizationPoint<IOException> connect(SocketAddress address, int timeout, SocketOptionValue<?>... options) {
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Connecting to " + address.toString());
 		if (spConnect != null)
 			return new SynchronizationPoint<>(new IOException("Client already connecting"));
@@ -174,7 +175,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 			manager.register(channel, SelectionKey.OP_CONNECT, networkClient, timeout);
 			return result;
 		} catch (IOException e) {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Connection error", e);
 			closed = true;
 			spConnect.error(e);
@@ -194,7 +195,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		if (networkClient.reading != null && !networkClient.reading.isUnblocked()) {
 			return new AsyncWork<>(null, new IOException("TCPClient is already waiting for data"));
 		}
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Register to NetworkManager for reading data");
 		networkClient.reading = new AsyncWork<>();
 		networkClient.expectedBytes = expectedBytes;
@@ -351,7 +352,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				try {
 					listener.fire(data);
 				} catch (Throwable t) {
-					logger.error("Exception thrown by data listener", t);
+					client.logger.error("Exception thrown by data listener", t);
 					return;
 				}
 				if (data.hasRemaining())
@@ -395,7 +396,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void readyToSend() {
-			if (logger.isDebugEnabled())
+			if (logger.debug())
 				logger.debug("Socket ready for sending, sending...");
 			boolean needsMore = false;
 			while (true) {
@@ -412,7 +413,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					} else
 						p = toSend.getFirst();
 				}
-				if (logger.isDebugEnabled())
+				if (logger.debug())
 					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
 				if (p.getValue1().remaining() == 0) {
 					if (p.getValue2() != null)
@@ -436,7 +437,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					}
 					continue;
 				}
-				if (logger.isDebugEnabled())
+				if (logger.debug())
 					logger.debug(nb + " bytes sent to " + channel);
 				if (nb == 0) {
 					// cannot write anymore
@@ -467,14 +468,14 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	 */
 	@Override
 	public ISynchronizationPoint<IOException> send(ByteBuffer data) {
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Sending data: " + data.remaining());
-		if (NetworkManager.dataLogger.isTraceEnabled()) {
+		if (manager.getDataLogger().trace()) {
 			if (data.hasArray()) {
 				StringBuilder s = new StringBuilder(data.remaining() * 4);
 				s.append("TCPClient: Data to send to server:\r\n");
 				DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-				NetworkManager.dataLogger.trace(s.toString());
+				manager.getDataLogger().trace(s.toString());
 			}
 		}
 		if (data.remaining() == 0)
@@ -505,7 +506,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	@Override
 	public void close() {
 		if (closed) return;
-		if (logger.isDebugEnabled())
+		if (logger.debug())
 			logger.debug("Close client");
 		try { channel.close(); }
 		catch (Throwable e) { /* ignore */ }

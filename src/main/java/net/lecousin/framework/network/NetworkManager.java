@@ -26,11 +26,9 @@ import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
+import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.util.DebugUtil;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 /**
  * The NetworkManager launches a thread to listen to network events using the Java NIO framework,
@@ -40,9 +38,6 @@ import org.apache.commons.logging.LogFactory;
  */
 public class NetworkManager implements Closeable {
 
-	public static final Log logger = LogFactory.getLog("network");
-	public static final Log dataLogger = LogFactory.getLog("network-data");
-	
 	/**
 	 * Base interface for a listener, with a channelClosed event.
 	 */
@@ -116,6 +111,8 @@ public class NetworkManager implements Closeable {
 	}
 	
 	private NetworkManager(Application app) {
+		logger = app.getLoggerFactory().getLogger("network");
+		dataLogger = app.getLoggerFactory().getLogger("network-data");
 		app.toClose(this);
 		try {
 			selector = Selector.open();
@@ -143,10 +140,20 @@ public class NetworkManager implements Closeable {
 		return nm;
 	}
 	
+	private Logger logger;
+	private Logger dataLogger;
 	private Selector selector;
 	private Thread worker;
 	private boolean stop = false;
 	private TurnArray<RegisterRequest> requests = new TurnArray<>(30);
+	
+	public Logger getLogger() {
+		return logger;
+	}
+	
+	public Logger getDataLogger() {
+		return dataLogger;
+	}
 	
 	private static class RegisterRequest {
 		private SelectableChannel channel;
@@ -250,7 +257,7 @@ public class NetworkManager implements Closeable {
 		req.listener = listener;
 		req.timeout = timeout;
 		req.result = new AsyncWork<>();
-		if (logger.isTraceEnabled())
+		if (logger.trace())
 			logger.trace("Registering channel " + channel + " for operations " + ops + " with timeout " + timeout);
 		synchronized (requests) {
 			requests.addLast(req);
@@ -274,7 +281,7 @@ public class NetworkManager implements Closeable {
 				if (stop) break;
 				Set<SelectionKey> keys = selector.selectedKeys();
 				if (!keys.isEmpty()) {
-					if (logger.isTraceEnabled()) logger.trace(keys.size() + " network channels are ready for operations");
+					if (logger.trace()) logger.trace(keys.size() + " network channels are ready for operations");
 					loopCount++;
 					for (Iterator<SelectionKey> it = keys.iterator(); it.hasNext(); ) {
 						SelectionKey key = it.next();
@@ -285,7 +292,7 @@ public class NetworkManager implements Closeable {
 							continue;
 						}
 						int ops = key.readyOps();
-						if (logger.isTraceEnabled()) logger.trace("Ready operation: " + ops + " for " + key.toString());
+						if (logger.trace()) logger.trace("Ready operation: " + ops + " for " + key.toString());
 						if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 							Server server = listeners.onAccept;
 							try {
@@ -299,7 +306,7 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
 							// a socket is connected
 							Client client = listeners.onConnect;
-							if (logger.isTraceEnabled())
+							if (logger.trace())
 								logger.trace("A socket is ready to be connected: " + key.channel().toString());
 							try {
 								((SocketChannel)key.channel()).finishConnect();
@@ -307,7 +314,7 @@ public class NetworkManager implements Closeable {
 								listeners.reset();
 								connected(client);
 							} catch (Throwable e) {
-								if (logger.isInfoEnabled())
+								if (logger.info())
 									logger.info("Connection failed: " + key.channel().toString());
 								key.cancel();
 								connectionFailed(client, e);
@@ -324,7 +331,7 @@ public class NetworkManager implements Closeable {
 									TCPReceiver tcp = (TCPReceiver)receiver;
 									int nb = ((ReadableByteChannel)key.channel()).read(buffer);
 									if (nb < 0) {
-										if (logger.isTraceEnabled())
+										if (logger.trace())
 											logger.trace("End of stream reached for socket: "
 												+ key.channel().toString());
 										key.interestOps(0);
@@ -355,7 +362,7 @@ public class NetworkManager implements Closeable {
 									}
 								}
 							} catch (Throwable e) {
-								if (logger.isErrorEnabled())
+								if (logger.error())
 									logger.error("Error while receiving data from network on "
 										+ key.channel().toString(), e);
 								receiveError(receiver, e, buffer);
@@ -374,13 +381,13 @@ public class NetworkManager implements Closeable {
 								key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
 								listeners.onWrite = null;
 								listeners.onWriteTimeout = 0;
-								if (logger.isTraceEnabled())
+								if (logger.trace())
 									logger.trace("Socket ready to send data on " + key.channel());
 								readyToSend(sender);
 							} catch (CancelledKeyException e) {
 								channelClosed(sender);
 							} catch (Throwable t) {
-								if (logger.isErrorEnabled())
+								if (logger.error())
 									logger.error("Error with channel ready to send", t);
 							}
 						}
@@ -396,7 +403,7 @@ public class NetworkManager implements Closeable {
 				synchronized (requests) {
 					if (!requests.isEmpty()) continue;
 				}
-				if (logger.isTraceEnabled()) logger.trace("NetworkManager is waiting for operations");
+				if (logger.trace()) logger.trace("NetworkManager is waiting for operations");
 				long now = System.nanoTime();
 				workingTime += now - start;
 				try {
@@ -407,7 +414,7 @@ public class NetworkManager implements Closeable {
 					} else
 						selector.select();
 				} catch (IOException e) {
-					if (logger.isErrorEnabled()) logger.error("Error selecting channels", e);
+					if (logger.error()) logger.error("Error selecting channels", e);
 					break;
 				} catch (ClosedSelectorException e) {
 					break; // closing
@@ -417,7 +424,7 @@ public class NetworkManager implements Closeable {
 			}
 			try { selector.close(); }
 			catch (Throwable e) { /* ignore */ }
-			if (logger.isInfoEnabled())
+			if (logger.info())
 				logger.info("Network Manager closed, worked during "
 					+ String.format("%.5f", new Double(workingTime * 1.d / 1000000000))
 					+ "s., waited " + String.format("%.5f", new Double(waitingTime * 1.d / 1000000000)) + "s.");
@@ -461,7 +468,8 @@ public class NetworkManager implements Closeable {
 							receiveError((Receiver)req.listener,
 								new IOException("Already registered for read operation"), null);
 						if ((conflict & SelectionKey.OP_WRITE) != 0)
-							logger.error(new IOException("Already registered for write operation"));
+							logger.error("Already registered for write operation",
+								new IOException("Already registered for write operation"));
 					} catch (Throwable t) {
 						logger.error("Error calling listener", t);
 					}
@@ -525,18 +533,18 @@ public class NetworkManager implements Closeable {
 		return nextTimeout;
 	}
 	
-	private static void acceptClient(Server server, SocketChannel client) {
+	private void acceptClient(Server server, SocketChannel client) {
 		new Task.Cpu<Void, NoException>("Accept network client", Task.PRIORITY_NORMAL) {
 			@Override
 			public Void run() {
 				try {
 					InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
 					if (!NetworkSecurity.acceptAddress(addr.getAddress())) {
-						if (logger.isDebugEnabled())
+						if (logger.debug())
 							logger.debug("Client rejected: " + addr);
 						client.close();
 					} else {
-						if (logger.isDebugEnabled())
+						if (logger.debug())
 							logger.debug("New client connected: " + client.toString());
 						client.configureBlocking(false);
 						server.newClient(client);
@@ -579,12 +587,12 @@ public class NetworkManager implements Closeable {
 		}.start();
 	}
 	
-	private static void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
+	private void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
 		new Task.Cpu<Void, NoException>("Call TCPReceiver.received", Task.PRIORITY_NORMAL) {
 			@Override
 			public Void run() {
 				buffer.flip();
-				if (dataLogger.isTraceEnabled()) {
+				if (dataLogger.trace()) {
 					StringBuilder s = new StringBuilder(nb * 5 + 256);
 					s.append(nb).append(" bytes received on ");
 					s.append(channel.toString());
