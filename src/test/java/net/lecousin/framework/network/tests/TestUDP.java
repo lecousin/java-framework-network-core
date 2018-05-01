@@ -6,9 +6,11 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
 import net.lecousin.framework.concurrent.synch.JoinPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.UDPClient;
 import net.lecousin.framework.network.server.UDPServer;
 import net.lecousin.framework.network.server.UDPServer.MessageSender;
@@ -62,15 +64,22 @@ public class TestUDP extends AbstractNetworkTest {
 
 	@Test(timeout=120000)
 	public void testSendManyMessages() throws Exception {
-		byte[] buf = new byte[32768];
-		for (int i = 0; i < buf.length; ++i)
-			buf[i] = (byte)i;
-		UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
-		SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
-		for (int i = 0; i < 100; ++i)
-			client.send(ByteBuffer.wrap(buf), i == 99 ? last : null);
-		last.blockThrow(0);
-		client.close();
+		try {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+			byte[] buf = new byte[32768];
+			for (int i = 0; i < buf.length; ++i)
+				buf[i] = (byte)i;
+			UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
+			SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
+			for (int i = 0; i < 100; ++i)
+				client.send(ByteBuffer.wrap(buf), i == 99 ? last : null);
+			last.blockThrow(0);
+			client.close();
+		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+		}
 	}
 	
 	@SuppressWarnings("resource")
