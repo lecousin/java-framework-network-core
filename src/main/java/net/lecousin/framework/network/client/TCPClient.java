@@ -187,6 +187,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	
 	/**
 	 * Receive data from the server.
+	 * Important note: if end of stream is reached, the returned buffer is null.
 	 * @param expectedBytes buffer size that will be used to receive data
 	 */
 	public AsyncWork<ByteBuffer, IOException> receiveData(int expectedBytes, int timeout) {
@@ -323,6 +324,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		 * the new data is appended to the remaining bytes before to call again the listener.
 		 * Once this method has been called, no other read method can be called because it
 		 * will conflict by trying to read concurrently.
+		 * Important note: when end of stream is reached, the listener is called with a null value.
 		 */
 		public void readForEver(int bufferSize, int timeout, Listener<ByteBuffer> listener) {
 			if (remainingRead != null) {
