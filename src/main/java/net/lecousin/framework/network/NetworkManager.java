@@ -372,6 +372,7 @@ public class NetworkManager implements Closeable {
 								listeners.reset();
 								try { key.channel().close(); }
 								catch (Throwable t) { /* ignore */ }
+								channelClosed(receiver);
 							}
 						}
 						if ((ops & SelectionKey.OP_WRITE) != 0) {
