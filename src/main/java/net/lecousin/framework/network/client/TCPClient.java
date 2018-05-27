@@ -346,10 +346,13 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				if (remainingData == null)
 					data = newData;
 				else {
-					data = ByteBuffer.allocate(remainingData.remaining() + newData.remaining());
-					data.put(remainingData);
-					data.put(newData);
-					data.flip();
+					if (newData != null) {
+						data = ByteBuffer.allocate(remainingData.remaining() + newData.remaining());
+						data.put(remainingData);
+						data.put(newData);
+						data.flip();
+					} else
+						data = remainingData;
 				}
 				try {
 					listener.fire(data);
@@ -357,7 +360,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					client.logger.error("Exception thrown by data listener", t);
 					return;
 				}
-				if (data.hasRemaining())
+				if (data != null && data.hasRemaining())
 					remainingRead = data;
 				client.receiveData(bufferSize, timeout).listenInline((d) -> {
 					ByteBuffer rem = remainingRead;
