@@ -8,8 +8,6 @@ import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
@@ -187,7 +185,6 @@ public class UDPClient implements Closeable {
 			return buffer;
 		}
 		
-		@SuppressFBWarnings("IS2_INCONSISTENT_SYNC")
 		@Override
 		public void received(ByteBuffer buffer, SocketAddress source) {
 			AnswerListener l;
