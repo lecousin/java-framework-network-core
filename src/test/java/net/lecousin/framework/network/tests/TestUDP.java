@@ -62,7 +62,7 @@ public class TestUDP extends AbstractNetworkTest {
 		jp.blockThrow(0);
 	}
 
-	@Test(timeout=120000)
+	@Test(timeout=240000)
 	public void testSendManyMessages() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
