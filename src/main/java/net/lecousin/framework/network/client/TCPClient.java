@@ -362,6 +362,8 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				}
 				if (data != null && data.hasRemaining())
 					remainingRead = data;
+				if (data == null && newData == null)
+					return; // end of data
 				client.receiveData(bufferSize, timeout).listenInline((d) -> {
 					ByteBuffer rem = remainingRead;
 					remainingRead = null;

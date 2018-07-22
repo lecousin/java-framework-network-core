@@ -63,6 +63,15 @@ public class TCPServer implements Closeable {
 		return addresses;
 	}
 	
+	/** Return a list of currently connected clients. */
+	public ArrayList<Closeable> getConnectedClients() {
+		ArrayList<Closeable> list;
+		synchronized (clients) {
+			list = new ArrayList<>(clients);
+		}
+		return list;
+	}
+	
 	@Override
 	public void close() {
 		unbindAll();
@@ -167,6 +176,9 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public synchronized void close() {
+			synchronized (clients) {
+				clients.remove(this);
+			}
 			if (channel == null) return;
 			if (manager.getLogger().debug())
 				manager.getLogger().debug("Client closed: " + channel);
@@ -360,6 +372,11 @@ public class TCPServer implements Closeable {
 		@Override
 		public void channelClosed() {
 			close();
+		}
+		
+		@Override
+		public String toString() {
+			return "Connected client[" + channel + "]";
 		}
 		
 	}

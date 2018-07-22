@@ -362,7 +362,7 @@ public class NetworkManager implements Closeable {
 									}
 								}
 							} catch (Throwable e) {
-								if (logger.error())
+								if (logger.error() && !(e instanceof IOException))
 									logger.error("Error while receiving data from network on "
 										+ key.channel().toString(), e);
 								receiveError(receiver, e, buffer);
