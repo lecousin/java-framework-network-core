@@ -188,7 +188,7 @@ public class TCPServer implements Closeable {
 				channel = null;
 			}
 			if (manager.getLogger().debug())
-				manager.getLogger().debug("Client closed: " + channel);
+				manager.getLogger().debug("Client closed: " + ch);
 			if (ch.isOpen())
 				try { ch.close(); }
 				catch (Throwable e) { /* ignore */ }
