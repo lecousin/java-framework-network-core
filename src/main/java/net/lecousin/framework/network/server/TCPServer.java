@@ -113,11 +113,13 @@ public class TCPServer implements Closeable {
 		for (ISynchronizationPoint<IOException> s : sp)
 			s.block(5000);
 		channels.clear();
+		ArrayList<Client> list;
 		synchronized (clients) {
-			for (Client client : clients)
-				client.close();
+			list = new ArrayList<>(clients);
 			clients.clear();
 		}
+		for (Client client : list)
+			client.close();
 	}
 	
 	private class ServerChannel implements NetworkManager.Server {
@@ -175,17 +177,21 @@ public class TCPServer implements Closeable {
 		}
 		
 		@Override
-		public synchronized void close() {
+		public void close() {
 			synchronized (clients) {
 				clients.remove(this);
 			}
-			if (channel == null) return;
+			SocketChannel ch;
+			synchronized (this) {
+				if (channel == null) return;
+				ch = channel;
+				channel = null;
+			}
 			if (manager.getLogger().debug())
 				manager.getLogger().debug("Client closed: " + channel);
-			if (channel.isOpen())
-				try { channel.close(); }
+			if (ch.isOpen())
+				try { ch.close(); }
 				catch (Throwable e) { /* ignore */ }
-			channel = null;
 			for (AutoCloseable c : publicInterface.toClose)
 				try { c.close(); }
 				catch (Throwable e) { /* ignore */ }
@@ -246,7 +252,7 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
-			if (inputBuffers != null && buffer != null)
+			if (inputBuffers != null && buffer != null && channel != null)
 				synchronized (inputBuffers) { inputBuffers.add(buffer); }
 		}
 		
@@ -304,7 +310,7 @@ public class TCPServer implements Closeable {
 		@Override
 		public void readyToSend() {
 			synchronized (Client.this) {
-				if (outputBuffers == null) return;
+				if (outputBuffers == null || channel == null) return;
 				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
 					outputBuffers.add(new Pair<>(dataToSendProvider.provide(), dataToSendSP));
 					dataToSendProvider = null;
