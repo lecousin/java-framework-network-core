@@ -62,7 +62,7 @@ public class TestUDP extends AbstractNetworkTest {
 		jp.blockThrow(0);
 	}
 
-	@Test(timeout=240000)
+	@Test(timeout=120000)
 	public void testSendManyMessages() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
@@ -74,7 +74,7 @@ public class TestUDP extends AbstractNetworkTest {
 			SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
 			for (int i = 0; i < 100; ++i)
 				client.send(ByteBuffer.wrap(buf), i == 99 ? last : null);
-			last.blockThrow(0);
+			last.blockThrow(15000);
 			client.close();
 		} finally {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
