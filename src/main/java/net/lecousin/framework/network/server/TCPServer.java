@@ -92,7 +92,7 @@ public class TCPServer implements Closeable {
 		channels.add(sc);
 		local = channel.getLocalAddress();
 		if (manager.getLogger().info())
-			manager.getLogger().info("New TCP server listening on " + local.toString());
+			manager.getLogger().info("New TCP server listening at " + local.toString());
 		return local;
 	}
 	
