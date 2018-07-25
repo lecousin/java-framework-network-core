@@ -321,26 +321,30 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		/** Wait for data until connection is closed.
 		 * When some data is available, the given listener is called.
 		 * If the listener does not fully consumed the buffer, when new data is received
-		 * the new data is appended to the remaining bytes before to call again the listener.
+		 * the new data is appended to the remaining bytes before to call again the listener,
+		 * except if the parameter keepRemainingData is false.
 		 * Once this method has been called, no other read method can be called because it
 		 * will conflict by trying to read concurrently.
 		 * Important note: when end of stream is reached, the listener is called with a null value.
 		 */
-		public void readForEver(int bufferSize, int timeout, Listener<ByteBuffer> listener) {
+		public void readForEver(int bufferSize, int timeout, Listener<ByteBuffer> listener, boolean keepRemainingData) {
 			if (remainingRead != null) {
 				ByteBuffer data = remainingRead;
 				remainingRead = null;
-				call(null, data, listener, bufferSize, timeout);
+				call(null, data, listener, bufferSize, timeout, keepRemainingData);
 				return;
 			}
 			client.receiveData(bufferSize, timeout).listenInline((data) -> {
 				ByteBuffer rem = remainingRead;
 				remainingRead = null;
-				call(rem, data, listener, bufferSize, timeout);
+				call(rem, data, listener, bufferSize, timeout, keepRemainingData);
 			}, (error) -> { }, (cancel) -> { });
 		}
 		
-		private void call(ByteBuffer remainingData, ByteBuffer newData, Listener<ByteBuffer> listener, int bufferSize, int timeout) {
+		private void call(
+			ByteBuffer remainingData, ByteBuffer newData, Listener<ByteBuffer> listener,
+			int bufferSize, int timeout, boolean keepRemainingData
+		) {
 			new Task.Cpu.FromRunnable("Call TCPClient data receiver", Task.PRIORITY_NORMAL, () -> {
 				ByteBuffer data;
 				if (remainingData == null)
@@ -360,14 +364,14 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					client.logger.error("Exception thrown by data listener", t);
 					return;
 				}
-				if (data != null && data.hasRemaining())
+				if (data != null && data.hasRemaining() && keepRemainingData)
 					remainingRead = data;
 				if (data == null && newData == null)
 					return; // end of data
 				client.receiveData(bufferSize, timeout).listenInline((d) -> {
 					ByteBuffer rem = remainingRead;
 					remainingRead = null;
-					call(rem, d, listener, bufferSize, timeout);
+					call(rem, d, listener, bufferSize, timeout, keepRemainingData);
 				}, (error) -> { }, (cancel) -> { });
 			}).start();
 		}

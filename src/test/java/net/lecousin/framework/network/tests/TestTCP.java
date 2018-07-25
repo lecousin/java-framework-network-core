@@ -383,7 +383,7 @@ public class TestTCP extends AbstractNetworkTest {
 				received.append((char)data.get());
 			if (received.toString().endsWith("Hello Message 2\n"))
 				spReceived.unblock();
-		});
+		}, true);
 		Assert.assertFalse(closed.get());
 		send(client, "I'm Message 1");
 		Assert.assertFalse(closed.get());
