@@ -55,9 +55,7 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	@Override
 	public ISynchronizationPoint<IOException> send(ByteBuffer data) {
 		try { return send(data, false); }
-		catch (ClosedChannelException e) {
-			return new SynchronizationPoint<>(e);
-		}
+		catch (ClosedChannelException e) { return new SynchronizationPoint<>(e); }
 	}
 
 	public boolean isClosed() {

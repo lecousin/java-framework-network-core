@@ -89,8 +89,7 @@ public class SSLClient extends TCPClient {
 		public void closed() {
 			@SuppressWarnings("unchecked")
 			SynchronizationPoint<IOException> sp = (SynchronizationPoint<IOException>)getAttribute(CONNECT_ATTRIBUTE);
-			if (sp != null && !sp.isUnblocked())
-				sp.error(new ClosedChannelException());
+			if (sp != null && !sp.isUnblocked()) sp.error(new ClosedChannelException());
 			channelClosed();
 		}
 		

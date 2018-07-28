@@ -57,11 +57,9 @@ public class UDPClient implements Closeable {
 					}
 				} catch (IOException e) {
 					// error while sending data, just skip it
-					if (p.getValue2() != null)
-						p.getValue2().error(e);
+					if (p.getValue2() != null) p.getValue2().error(e);
 					synchronized (toSend) {
-						if (!toSend.isEmpty())
-							toSend.removeFirst();
+						if (!toSend.isEmpty()) toSend.removeFirst();
 					}
 					continue;
 				}

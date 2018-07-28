@@ -65,6 +65,20 @@ public class TestTCP extends AbstractNetworkTest {
 			catch (ClosedChannelException e) {
 				e.printStackTrace(System.err);
 			}
+			Closeable c = new Closeable() { @Override public void close() {} };
+			client.addToClose(c);
+			client.removeToClose(c);
+			SynchronizationPoint<Exception> sp = new SynchronizationPoint<>();
+			client.addPending(sp);
+			sp.unblock();
+			client.addPending(sp);
+			try {
+				client.getLocalAddress();
+				client.getRemoteAddress();
+				client.getClientAddress();
+			} catch (Throwable t) {
+				t.printStackTrace(System.err);
+			}
 		}
 
 		@Override

@@ -84,8 +84,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 
 	protected void channelClosed() {
 		if (closed) return;
-		if (logger.debug())
-			logger.debug("Channel closed - client closed");
+		logger.debug("Channel closed - client closed");
 		closed = true;
 		if (spConnect != null) spConnect.error(new ClosedChannelException());
 		synchronized (toSend) {
@@ -106,16 +105,14 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void connected() {
-			if (logger.debug())
-				logger.debug("Client connected");
+			logger.debug("Client connected");
 			spConnect.unblock();
 			spConnect = null;
 		}
 		
 		@Override
 		public void connectionFailed(IOException error) {
-			if (logger.debug())
-				logger.debug("Client connection error", error);
+			logger.debug("Client connection error", error);
 			closed = true;
 			spConnect.error(error);
 			spConnect = null;
@@ -135,8 +132,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
-			if (logger.debug())
-				logger.debug("Client receive error", error);
+			logger.debug("Client receive error", error);
 			reading.unblockError(error);
 		}
 		
@@ -147,8 +143,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void endOfInput(ByteBuffer buffer) {
-			if (logger.debug())
-				logger.debug("Client end of input");
+			logger.debug("Client end of input");
 			buffer.flip();
 			endOfInput = true;
 			reading.unblockSuccess(buffer);
@@ -177,8 +172,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 			manager.register(channel, SelectionKey.OP_CONNECT, networkClient, timeout);
 			return result;
 		} catch (IOException e) {
-			if (logger.debug())
-				logger.debug("Connection error", e);
+			logger.debug("Connection error", e);
 			closed = true;
 			spConnect.error(e);
 			channel = null;
@@ -193,13 +187,10 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	 * @param expectedBytes buffer size that will be used to receive data
 	 */
 	public AsyncWork<ByteBuffer, IOException> receiveData(int expectedBytes, int timeout) {
-		if (endOfInput)
-			return new AsyncWork<>(null, null);
-		if (networkClient.reading != null && !networkClient.reading.isUnblocked()) {
+		if (endOfInput) return new AsyncWork<>(null, null);
+		if (networkClient.reading != null && !networkClient.reading.isUnblocked())
 			return new AsyncWork<>(null, new IOException("TCPClient is already waiting for data"));
-		}
-		if (logger.debug())
-			logger.debug("Register to NetworkManager for reading data");
+		logger.debug("Register to NetworkManager for reading data");
 		networkClient.reading = new AsyncWork<>();
 		networkClient.expectedBytes = expectedBytes;
 		manager.register(channel, SelectionKey.OP_READ, networkClient, timeout);
@@ -409,8 +400,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void readyToSend() {
-			if (logger.debug())
-				logger.debug("Socket ready for sending, sending...");
+			logger.debug("Socket ready for sending, sending...");
 			boolean needsMore = false;
 			while (true) {
 				Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
@@ -442,8 +432,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					nb = channel.write(p.getValue1());
 				} catch (IOException e) {
 					// error while sending data, just skip it
-					if (p.getValue2() != null)
-						p.getValue2().error(e);
+					if (p.getValue2() != null) p.getValue2().error(e);
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
@@ -519,8 +508,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	@Override
 	public void close() {
 		if (closed) return;
-		if (logger.debug())
-			logger.debug("Close client");
+		logger.debug("Close client");
 		try { channel.close(); }
 		catch (Throwable e) { /* ignore */ }
 		channelClosed();
