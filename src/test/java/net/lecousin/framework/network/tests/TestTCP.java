@@ -577,6 +577,7 @@ public class TestTCP extends AbstractNetworkTest {
 			// expected
 		}
 		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
