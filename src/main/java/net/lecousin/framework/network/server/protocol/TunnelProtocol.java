@@ -40,15 +40,11 @@ public class TunnelProtocol implements ServerProtocol {
 				client.close();
 				return;
 			}
-			if (logger.trace())
-				logger.trace("Data received from remote: " + data.remaining());
+			if (logger.trace()) logger.trace("Data received from remote: " + data.remaining());
 			client.send(data);
 		}, false);
-		try {
-			client.waitForData(0);
-		} catch (ClosedChannelException e) {
-			tunnel.close();
-		}
+		try { client.waitForData(0); }
+		catch (ClosedChannelException e) { tunnel.close(); }
 	}
 	
 	@Override
@@ -83,16 +79,13 @@ public class TunnelProtocol implements ServerProtocol {
 				return;
 			}
 		new Task.Cpu.FromRunnable("Forward data from client to remote", Task.PRIORITY_NORMAL, () -> {
-			if (logger.trace())
-				logger.trace("Data received from client: " + data.remaining());
+			if (logger.trace()) logger.trace("Data received from client: " + data.remaining());
 			ISynchronizationPoint<IOException> send = tunnel.send(data);
 			send.listenInline(onbufferavailable);
 			send.listenInline(ls);
 			if (!readAgain)
 				try { client.waitForData(0); }
-				catch (ClosedChannelException e) {
-					tunnel.close();
-				}
+				catch (ClosedChannelException e) { tunnel.close(); }
 		}).startOn(previous, false);
 	}
 	

@@ -101,8 +101,7 @@ public class SSLServerProtocol implements ServerProtocol {
 				// we need to concatenate it
 				int total = 0;
 				for (ByteBuffer b : data) total += b.remaining();
-				if (total == 0)
-					return;
+				if (total == 0) return;
 				buf = ByteBuffer.allocate(total);
 				for (ByteBuffer b : data)
 					buf.put(b);

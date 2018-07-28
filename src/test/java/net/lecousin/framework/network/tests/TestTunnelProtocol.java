@@ -11,6 +11,7 @@ import org.junit.Test;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.server.TCPServerClient;
@@ -23,6 +24,7 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 	private static class TestTunnel implements ServerProtocol {
 		private TestTunnel() {
 			logger = LCCore.getApplication().getLoggerFactory().getLogger(TestTunnelProtocol.class);
+			logger.setLevel(Level.TRACE);
 			tunnelProtocol = new TunnelProtocol(4096, logger);
 		}
 		
@@ -41,6 +43,8 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 				return;
 			}
 			tunnelProtocol.registerClient(client, tunnel);
+			tunnelProtocol.startProtocol(client);
+			tunnelProtocol.getInputBufferSize();
 			client.send(ByteBuffer.wrap(new byte[] { 1 }));
 		}
 

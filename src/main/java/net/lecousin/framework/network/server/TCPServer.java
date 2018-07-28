@@ -104,10 +104,7 @@ public class TCPServer implements Closeable {
 				manager.getLogger().info("Closing TCP server: " + channel.channel.toString());
 			channel.key.cancel();
 			try { channel.channel.close(); }
-			catch (IOException e) {
-				if (manager.getLogger().error())
-					manager.getLogger().error("Error closing TCP server", e);
-			}
+			catch (IOException e) { manager.getLogger().error("Error closing TCP server", e); }
 			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
 		for (ISynchronizationPoint<IOException> s : sp)
@@ -358,6 +355,9 @@ public class TCPServer implements Closeable {
 						return;
 				}
 				// still something to write, we need to register to the network manager
+				if (manager.getLogger().debug())
+					manager.getLogger().debug("Register to NetworkManager to send data: "
+						+ outputBuffers.size() + " buffer(s) remaining");
 				manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
 			}
 		}

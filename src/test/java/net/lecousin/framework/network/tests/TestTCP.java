@@ -1,5 +1,6 @@
 package net.lecousin.framework.network.tests;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ConnectException;
@@ -11,9 +12,15 @@ import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedList;
 
 import javax.net.ssl.SSLException;
+
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
@@ -34,11 +41,6 @@ import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 import net.lecousin.framework.util.Provider;
-
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
 
 public class TestTCP extends AbstractNetworkTest {
 
@@ -72,6 +74,7 @@ public class TestTCP extends AbstractNetworkTest {
 		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			System.out.println("Received from client: " + data.remaining());
 			Assert.assertTrue(client.getServer() == server || client.getServer() == serverSSL);
+			int timeout = 10000;
 			while (data.hasRemaining()) {
 				StringBuilder msg;
 				if (!client.hasAttribute("reading")) {
@@ -89,7 +92,8 @@ public class TestTCP extends AbstractNetworkTest {
 							break;
 						}
 						for (int i = 0; i < 1000; ++i)
-							client.send(ByteBuffer.allocate(65536));
+							client.send(ByteBuffer.allocate(1024 * 1024));
+						timeout = 1200000;
 						break;
 					}
 					client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
@@ -99,7 +103,7 @@ public class TestTCP extends AbstractNetworkTest {
 				msg.append((char)b);
 			}
 			onbufferavailable.run();
-			try { client.waitForData(10000); }
+			try { client.waitForData(timeout); }
 			catch (ClosedChannelException e) {}
 		}
 
@@ -290,6 +294,9 @@ public class TestTCP extends AbstractNetworkTest {
 		receiveDataServer.bind(new InetSocketAddress("localhost", 9995), 0);
 		if (ipv6 != null)
 			receiveDataServer.bind(new InetSocketAddress(ipv6, 9995), 0);
+		
+		Assert.assertTrue(server.getProtocol() instanceof TestProtocol);
+		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
 	@AfterClass
@@ -300,12 +307,20 @@ public class TestTCP extends AbstractNetworkTest {
 	
 	@Test(timeout=30000)
 	public void testServer() throws Exception {
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		server.getLocalAddresses();
 		Socket s = new Socket("localhost", 9999);
 		expect(s, "Welcome");
 		send(s, "I'm Tester");
 		expect(s, "Hello Tester");
+		
+		ArrayList<Closeable> clients = server.getConnectedClients();
+		Assert.assertEquals(1, clients.size());
+		clients.get(0).toString();
+		
 		s.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
 		if (ipv6 != null)
 			s = new Socket(ipv6, 9999);
@@ -315,6 +330,8 @@ public class TestTCP extends AbstractNetworkTest {
 		send(s, "Hello");
 		expect(s, "I don't understand you");
 		s.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
 	@Test(timeout=30000)
@@ -328,6 +345,7 @@ public class TestTCP extends AbstractNetworkTest {
 	
 	@Test(timeout=30000)
 	public void testTCPClient() throws Exception {
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		TCPClient client = new TCPClient();
 		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
@@ -342,6 +360,8 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "I'm Tester");
 		expect(client, "Hello Tester");
 		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 0);
@@ -350,6 +370,8 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "Hello");
 		expect(client, "I don't understand you");
 		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
@@ -363,12 +385,16 @@ public class TestTCP extends AbstractNetworkTest {
 			}
 		}, sp);
 		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
 		client.getReceiver().readAvailableBytes(10, 0).blockResult(0);
 		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
@@ -395,6 +421,8 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertFalse(closed.get());
 		client.close();
 		Assert.assertTrue(closed.get());
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
 	@Test(timeout=30000)
@@ -408,15 +436,30 @@ public class TestTCP extends AbstractNetworkTest {
 		client.close();
 	}
 	
-	@Test
+	@Test(timeout=120000)
 	public void testFloodMe() throws Exception {
+		Assert.assertEquals(0, server.getConnectedClients().size());
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
 		TCPClient client = new TCPClient();
 		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "flood me");
-		client.getReceiver().readBytes(1000 * 65536, 15000);
+		for (int i = 0; i < 1000; ++i) {
+			try {
+				Assert.assertEquals("Buffer " + i, 1024 * 1024, client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0).length);
+			} catch (IOException e) {
+				throw new Exception("Error reading buffer " + i, e);
+			}
+			try { Thread.sleep(30); }
+			catch (InterruptedException e) { break; }
+		}
 		client.close();
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
 	@Test(timeout=120000)
@@ -476,6 +519,7 @@ public class TestTCP extends AbstractNetworkTest {
 		client.close();
 
 		
+		Assert.assertEquals(0, server.getConnectedClients().size());
 		client = new SSLClient();
 		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
 		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
@@ -483,6 +527,7 @@ public class TestTCP extends AbstractNetworkTest {
 			// expected
 		}
 		client.close();
+		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
 	@Test(timeout=120000)

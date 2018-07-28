@@ -126,8 +126,10 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void received(ByteBuffer buffer) {
-			if (logger.debug())
+			if (logger.debug()) {
 				logger.debug("Client received " + buffer.remaining() + " bytes");
+				if (reading.isUnblocked()) logger.error("Received data but this was not expected");
+			}
 			reading.unblockSuccess(buffer);
 		}
 		

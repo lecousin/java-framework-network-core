@@ -445,6 +445,7 @@ public class NetworkManager implements Closeable {
 					Attachment listeners = new Attachment();
 					listeners.set(req.newOps, req.listener, req.timeout);
 					key = req.channel.register(selector, req.newOps, listeners);
+					if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
 					req.result.unblockSuccess(key);
 					continue;
 				}
@@ -455,9 +456,11 @@ public class NetworkManager implements Closeable {
 					if (conflict == 0) {
 						key.interestOps(curOps | req.newOps);
 						listeners.set(req.newOps, req.listener, req.timeout);
+						if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
 						req.result.unblockSuccess(key);
 						continue;
 					}
+					if (logger.error()) logger.error("Operation " + req.newOps + " already registered on " + req.channel);
 					req.result.unblockError(new IOException("Operation already registered"));
 					try {
 						if ((conflict & SelectionKey.OP_ACCEPT) != 0)
@@ -475,10 +478,13 @@ public class NetworkManager implements Closeable {
 						logger.error("Error calling listener", t);
 					}
 				} catch (CancelledKeyException e) {
+					if (logger.info())
+						logger.info("Cancelled key while registering " + req.channel + " for operations " + req.newOps);
 					listeners.channelClosed();
 					req.result.error(IO.error(e));
 				}
 			} catch (ClosedChannelException e) {
+				if (logger.info()) logger.info("Channel closed while registering " + req.channel + " for operations " + req.newOps);
 				if (req.listener != null)
 					channelClosed(req.listener);
 				req.result.error(e);
