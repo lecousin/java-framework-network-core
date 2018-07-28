@@ -26,6 +26,7 @@ import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
+import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.mutable.Mutable;
 import net.lecousin.framework.mutable.MutableBoolean;
@@ -39,6 +40,7 @@ import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.ssl.SSLLayer;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 import net.lecousin.framework.util.Provider;
 
@@ -91,8 +93,11 @@ public class TestTCP extends AbstractNetworkTest {
 							client.close();
 							break;
 						}
-						for (int i = 0; i < 1000; ++i)
-							client.send(ByteBuffer.allocate(1024 * 1024));
+						for (int i = 0; i < 1000; ++i) {
+							byte[] buf = new byte[1024 * 1024];
+							DataUtil.writeIntegerLittleEndian(buf, i, i);
+							client.send(ByteBuffer.wrap(buf));
+						}
 						timeout = 1200000;
 						break;
 					}
@@ -448,7 +453,9 @@ public class TestTCP extends AbstractNetworkTest {
 		send(client, "flood me");
 		for (int i = 0; i < 1000; ++i) {
 			try {
-				Assert.assertEquals("Buffer " + i, 1024 * 1024, client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0).length);
+				byte[] buf = client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0);
+				Assert.assertEquals("Buffer " + i, 1024 * 1024, buf.length);
+				Assert.assertEquals(i, DataUtil.readIntegerLittleEndian(buf, i));
 			} catch (IOException e) {
 				throw new Exception("Error reading buffer " + i, e);
 			}
@@ -460,6 +467,35 @@ public class TestTCP extends AbstractNetworkTest {
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
+	}
+	
+	@Test(timeout=120000)
+	public void testFloodMeSSL() throws Exception {
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.INFO);
+		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.INFO);
+		SSLClient client = new SSLClient(sslTest);
+		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9998), 10000);
+		sp.blockThrow(0);
+		expect(client, "Welcome");
+		send(client, "flood me");
+		for (int i = 0; i < 1000; ++i) {
+			try {
+				byte[] buf = client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0);
+				Assert.assertEquals("Buffer " + i, 1024 * 1024, buf.length);
+				Assert.assertEquals(i, DataUtil.readIntegerLittleEndian(buf, i));
+			} catch (IOException e) {
+				throw new Exception("Error reading buffer " + i, e);
+			}
+			try { Thread.sleep(30); }
+			catch (InterruptedException e) { break; }
+		}
+		client.close();
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.TRACE);
+		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 	}
 	
 	@Test(timeout=120000)

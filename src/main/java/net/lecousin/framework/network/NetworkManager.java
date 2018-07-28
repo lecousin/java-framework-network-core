@@ -668,7 +668,8 @@ public class NetworkManager implements Closeable {
 		new Task.Cpu<Void, NoException>("Call Listener.channelClosed", Task.PRIORITY_RATHER_LOW) {
 			@Override
 			public Void run() {
-				listener.channelClosed();
+				if (listener != null)
+					listener.channelClosed();
 				return null;
 			}
 		}.start();
