@@ -240,16 +240,21 @@ public class SSLClient extends TCPClient {
 	}
 	
 	private AsyncWork<ByteBuffer, IOException> lastReceive = null;
+	private SynchronizationPoint<NoException> lastReceiveDecrypted = null;
 	
 	private void waitForSSLData(int expectedBytes, int timeout) {
 		AsyncWork<ByteBuffer, IOException> receive;
+		SynchronizationPoint<NoException> decrypted = new SynchronizationPoint<>();
+		SynchronizationPoint<NoException> previous;
 		synchronized (sslClient) {
 			if (lastReceive != null && !lastReceive.isUnblocked())
 				return;
 			receive = super.receiveData(expectedBytes, timeout);
 			lastReceive = receive;
+			previous = lastReceiveDecrypted;
+			lastReceiveDecrypted = decrypted;
 		}
-		receive.listenAsync(new Task.Cpu<Void, NoException>("Receive SSL data from server", Task.PRIORITY_NORMAL) {
+		Task.Cpu<Void, NoException> task = new Task.Cpu<Void, NoException>("Receive SSL data from server", Task.PRIORITY_NORMAL) {
 			@SuppressWarnings("unchecked")
 			@Override
 			public Void run() {
@@ -275,7 +280,12 @@ public class SSLClient extends TCPClient {
 				ssl.dataReceived(sslClient, b, null);
 				return null;
 			}
-		}, true);
+		};
+		receive.listenInline(() -> {
+			if (previous == null) task.start();
+			else previous.listenAsync(task, true);
+		});
+		task.getOutput().listenInline(decrypted);
 	}
 	
 	private SynchronizationPoint<IOException> lastSend = null;

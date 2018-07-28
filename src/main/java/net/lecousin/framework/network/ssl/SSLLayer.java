@@ -332,6 +332,7 @@ public class SSLLayer {
 			logger.debug("Decrypting " + inputBuffer.remaining() + " bytes from SSL connection " + conn);
 		LinkedList<ByteBuffer> buffers = new LinkedList<ByteBuffer>();
 		while (inputBuffer.hasRemaining()) {
+			if (conn.isClosed()) return;
 			ByteBuffer dst = ByteBuffer.allocate(
 				Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()));
 			SSLEngineResult result;
