@@ -75,6 +75,7 @@ public class SSLLayer {
 	
 	private static final String ENGINE_ATTRIBUTE = "protocol.ssl.engine";
 	private static final String ENGINE_INPUT_BUFFER_ATTRIBUTE = "protocol.ssl.engine.inputBuffer";
+	private static final String ENGINE_INPUT_LOCK = "protocol.ssl.engine.input.lock";
 	private static final String HANDSHAKING_ATTRIBUTE = "protocol.ssl.handshaking";
 	private static final String HANDSHAKE_FOLLOWUP_ATTRIBUTE = "protocol.ssl.handshake.followup";
 	private static final String HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE = "protocol.ssl.handshake.followup.lock";
@@ -105,6 +106,7 @@ public class SSLLayer {
 			engine.beginHandshake();
 			conn.setAttribute(ENGINE_ATTRIBUTE, engine);
 			conn.setAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE, inputBuffer);
+			conn.setAttribute(ENGINE_INPUT_LOCK, new Object());
 			conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.TRUE);
 			HandshakeFollowup task = new HandshakeFollowup(conn);
 			conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
@@ -137,6 +139,7 @@ public class SSLLayer {
 			try {
 				SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 				ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+				Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 				do {
 					if (logger.debug())
 						logger.debug("SSL Handshake status for connection: "
@@ -184,7 +187,7 @@ public class SSLLayer {
 						}
 						return null;
 					case NEED_UNWRAP:
-						synchronized (inputBuffer) {
+						synchronized (inputLock) {
 							if (inputBuffer.position() == 0) {
 								if (logger.debug())
 									logger.debug(
@@ -252,7 +255,7 @@ public class SSLLayer {
 		            	}
 		            	conn.handshakeDone();
 		            	// if we already have some data ready, let's send it to the connection
-		            	synchronized (inputBuffer) {
+		            	synchronized (inputLock) {
 		            		if (inputBuffer.position() > 0)
 		            			dataReceived(conn, engine, inputBuffer);
 		            	}
@@ -291,10 +294,11 @@ public class SSLLayer {
 	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+		Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 		if (logger.debug())
 			logger.debug("SSL data received from connection " + conn + ": "
 				+ data.remaining() + " bytes (" + inputBuffer.position() + " already in input buffer)");
-		synchronized (inputBuffer) {
+		synchronized (inputLock) {
 			// copy data into buffer
 			if (data.remaining() > inputBuffer.remaining()) {
 				// enlarge input buffer
@@ -321,7 +325,7 @@ public class SSLLayer {
 		}
 	}
 	
-	// must be called synchronized on inputBuffer
+	// must be called synchronized on inputLock
 	private void dataReceived(TCPConnection conn, SSLEngine engine, ByteBuffer inputBuffer) {
 		inputBuffer.flip();
 		if (logger.debug())
