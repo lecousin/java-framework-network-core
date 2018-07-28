@@ -293,12 +293,12 @@ public class SSLLayer {
 	 */
 	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
-		ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
 		Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
-		if (logger.debug())
-			logger.debug("SSL data received from connection " + conn + ": "
-				+ data.remaining() + " bytes (" + inputBuffer.position() + " already in input buffer)");
 		synchronized (inputLock) {
+			ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+			if (logger.debug())
+				logger.debug("SSL data received from connection " + conn + ": "
+					+ data.remaining() + " bytes (" + inputBuffer.position() + " already in input buffer)");
 			// copy data into buffer
 			if (data.remaining() > inputBuffer.remaining()) {
 				// enlarge input buffer
