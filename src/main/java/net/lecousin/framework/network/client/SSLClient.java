@@ -16,6 +16,7 @@ import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
+import net.lecousin.framework.concurrent.synch.JoinPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -290,12 +291,13 @@ public class SSLClient extends TCPClient {
 					result.error(new IOException("SSL error"));
 					return null;
 				}
+				JoinPoint<IOException> jp = new JoinPoint<>();
 				do {
 					ByteBuffer b = encrypted.removeFirst();
-					ISynchronizationPoint<IOException> send = SSLClient.super.send(b);
-					if (encrypted.isEmpty())
-						send.listenInline(result);
+					jp.addToJoin(SSLClient.super.send(b));
 				} while (!encrypted.isEmpty());
+				jp.start();
+				jp.listenInline(result);
 				return null;
 			}
 		};

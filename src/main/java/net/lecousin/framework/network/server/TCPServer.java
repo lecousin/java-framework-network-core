@@ -320,7 +320,6 @@ public class TCPServer implements Closeable {
 						try { nb = channel.write(toWrite.getValue1()); }
 						catch (IOException e) {
 							// error while writing
-							close();
 							outputBuffers.removeFirst();
 							if (toWrite.getValue2() != null)
 								toWrite.getValue2().error(e);
@@ -329,6 +328,7 @@ public class TCPServer implements Closeable {
 								if (toWrite.getValue2() != null)
 									toWrite.getValue2().error(e);
 							}
+							close();
 							return;
 						}
 						if (manager.getLogger().debug())
