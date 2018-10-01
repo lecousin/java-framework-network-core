@@ -6,6 +6,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.memory.IMemoryManageable.FreeMemoryLevel;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.session.NetworkSessionProvider;
 import net.lecousin.framework.network.session.Session;
@@ -13,7 +14,7 @@ import net.lecousin.framework.network.session.SessionInMemory;
 
 public class TestSession extends LCCoreAbstractTest {
 
-	@Test
+	@Test(timeout=60000)
 	public void testSessionInMemory() throws Exception {
 		SessionInMemory sm = new SessionInMemory(0);
 		Assert.assertFalse(sm.load("123", new Session("")).blockResult(0).booleanValue());
@@ -23,11 +24,46 @@ public class TestSession extends LCCoreAbstractTest {
 		Assert.assertEquals(id,  s.getId());
 		s.putData("hello", "world");
 		sm.save(id, s).blockThrow(0);
+		
 		s = new Session(id);
 		Assert.assertTrue(sm.load(id, s).blockResult(0).booleanValue());
 		Assert.assertEquals("world", s.getData("hello"));
+		s.removeData("hello");
+		Assert.assertNull(s.getData("hello"));
+		// removed by not saved
+		sm.release(id);
+		s = new Session(id);
+		Assert.assertTrue(sm.load(id, s).blockResult(0).booleanValue());
+		Assert.assertEquals("world", s.getData("hello"));
+		s.removeData("hello");
+		Assert.assertNull(s.getData("hello"));
+		// removed and saved
+		sm.save(id, s).blockThrow(0);
+		s = new Session(id);
+		Assert.assertTrue(sm.load(id, s).blockResult(0).booleanValue());
+		Assert.assertNull(s.getData("hello"));
+		
 		sm.release(id);
 		sm.remove(id);
+		Assert.assertFalse(sm.load(id, new Session("")).blockResult(0).booleanValue());
+		sm.close();
+		
+		// try with fast expiration
+		sm = new SessionInMemory(5000);
+		id = sm.allocateId();
+		s = new Session(id);
+		s.putData("toto", "titi");
+		sm.save(id, s).blockThrow(0);
+		sm.getDescription();
+		sm.getItemsDescription();
+		sm.freeMemory(FreeMemoryLevel.EXPIRED_ONLY);
+		Assert.assertTrue(sm.load(id, s).blockResult(0).booleanValue());
+		Assert.assertEquals("titi", s.getData("toto"));
+		s.putData("toto", "tata");
+		sm.save(id, s).blockThrow(0);
+		// wait for expiration
+		try { Thread.sleep(5500); }
+		catch (InterruptedException e) {}
 		Assert.assertFalse(sm.load(id, new Session("")).blockResult(0).booleanValue());
 		sm.close();
 	}
