@@ -53,7 +53,8 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	public void close() {
 		if (expiration > 0) {
 			MemoryManager.unregister(this);
-			checkExpirationTask.stopRepeat();
+			if (checkExpirationTask != null)
+				checkExpirationTask.stopRepeat();
 			checkExpirationTask = null;
 		}
 		sessions = null;
