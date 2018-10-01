@@ -1,46 +1,137 @@
 package net.lecousin.framework.network.session;
 
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-import net.lecousin.framework.math.FragmentedRangeLong;
-import net.lecousin.framework.math.RangeLong;
-import net.lecousin.framework.util.StringUtil;
+import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
+import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.io.encoding.HexaDecimalEncoder;
+import net.lecousin.framework.memory.IMemoryManageable;
+import net.lecousin.framework.memory.MemoryManager;
+import net.lecousin.framework.util.IDManager;
+import net.lecousin.framework.util.IDManagerRandomLong;
+import net.lecousin.framework.util.Pair;
+import net.lecousin.framework.util.StringEncoding;
 
 /**
  * Store sessions in memory.
  */
-public class SessionInMemory implements SessionStorage {
+public class SessionInMemory implements SessionStorage, IMemoryManageable {
 
-	private HashMap<Long,Session> sessions = new HashMap<>(100);
-	private FragmentedRangeLong free = new FragmentedRangeLong(new RangeLong(1, Long.MAX_VALUE));
+	/** Constructor. */
+	public SessionInMemory(long expiration) {
+		this(new IDManagerRandomLong(new StringEncoding.EncodedLong(new HexaDecimalEncoder())), expiration);
+	}
+	
+	/** Constructor. */
+	public SessionInMemory(IDManager idManager, long expiration) {
+		this.idManager = idManager;
+		this.expiration = expiration;
+		if (expiration > 0) {
+			checkExpirationTask = new Task.Cpu.FromRunnable("Check expired sessions", Task.PRIORITY_LOW, () -> {
+				checkExpiredSessions();
+			}).executeEvery(30 * 60 * 1000, 60 * 60 * 1000);
+			MemoryManager.register(this);
+		}
+	}
+	
+	private HashMap<String, Pair<Long,List<Pair<String, Serializable>>>> sessions = new HashMap<>(100);
+	private IDManager idManager;
+	private long expiration;
+	private Task<Void, NoException> checkExpirationTask;
 	
 	@Override
 	public void close() {
+		if (expiration > 0) {
+			MemoryManager.unregister(this);
+			checkExpirationTask.stopRepeat();
+			checkExpirationTask = null;
+		}
 		sessions = null;
-		free = null;
+		idManager = null;
 	}
 	
 	@Override
-	public String allocateId() {
-		return StringUtil.encodeHexaPadding(free.removeFirstValue().longValue());
+	public synchronized String allocateId() {
+		return idManager.allocate();
 	}
 	
 	@Override
-	public void freeId(String id) {
-		long l = StringUtil.decodeHexaLong(id);
-		sessions.remove(Long.valueOf(l));
+	public AsyncWork<Boolean, Exception> load(String id, ISession session) {
+		Pair<Long, List<Pair<String, Serializable>>> s;
+		synchronized (this) { s = sessions.get(id); }
+		if (s == null) return new AsyncWork<>(Boolean.FALSE, null);
+		long now = System.currentTimeMillis();
+		if (expiration > 0 && now - s.getValue1().longValue() >= expiration) {
+			remove(id);
+			return new AsyncWork<>(Boolean.FALSE, null);
+		}
+		for (Pair<String, Serializable> p : s.getValue2())
+			session.putData(p.getValue1(), p.getValue2());
+		return new AsyncWork<>(Boolean.TRUE, null);
 	}
 	
 	@Override
-	public Session load(String id) {
-		long l = StringUtil.decodeHexaLong(id);
-		return sessions.get(Long.valueOf(l));
+	public synchronized void remove(String id) {
+		idManager.free(id);
+		sessions.remove(id);
 	}
 	
 	@Override
-	public void save(String id, Session session) {
-		long l = StringUtil.decodeHexaLong(id);
-		sessions.put(Long.valueOf(l), session);
+	public void release(String id) {
+	}
+	
+	@Override
+	public ISynchronizationPoint<Exception> save(String id, ISession session) {
+		Set<String> keys = session.getKeys();
+		ArrayList<Pair<String, Serializable>> list = new ArrayList<>(keys.size());
+		for (String key : keys)
+			list.add(new Pair<>(key, session.getData(key)));
+		synchronized (sessions) {
+			sessions.put(id, new Pair<>(Long.valueOf(System.currentTimeMillis()), list));
+		}
+		return new SynchronizationPoint<>(true);
+	}
+	
+	@Override
+	public long getExpiration() {
+		return expiration;
+	}
+	
+	private void checkExpiredSessions() {
+		if (expiration <= 0) return;
+		long now = System.currentTimeMillis();
+		List<String> toRemove = new LinkedList<>();
+		synchronized (this) {
+			for (Map.Entry<String, Pair<Long, List<Pair<String, Serializable>>>> e : sessions.entrySet())
+				if (now - e.getValue().getValue1().longValue() >= expiration)
+					toRemove.add(e.getKey());
+			for (String id : toRemove) remove(id);
+		}
+	}
+	
+	@Override
+	public String getDescription() {
+		return "Sessions";
+	}
+	
+	@Override
+	public List<String> getItemsDescription() {
+		return Arrays.asList("Sessions in memory: " + sessions.size());
+	}
+	
+	@Override
+	public void freeMemory(FreeMemoryLevel level) {
+		checkExpiredSessions();
 	}
 	
 }

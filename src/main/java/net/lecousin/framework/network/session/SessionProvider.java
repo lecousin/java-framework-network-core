@@ -2,6 +2,9 @@ package net.lecousin.framework.network.session;
 
 import java.io.Closeable;
 
+import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.exception.NoException;
+
 /**
  * Provides sessions for a specific type of client.
  * @param <T> type of client
@@ -9,7 +12,7 @@ import java.io.Closeable;
 public interface SessionProvider<T> extends Closeable {
 
 	/** Retrieve a session with an id and the client. */
-	public Session get(String id, T client);
+	public AsyncWork<Session, NoException> get(String id, T client);
 	
 	/** Create a new session for the client. */
 	public Session create(T client);
@@ -18,9 +21,9 @@ public interface SessionProvider<T> extends Closeable {
 	public void save(Session session, T client);
 	
 	/** Destroy a session. */
-	public void destroy(String id);
+	public void destroy(Session session);
 	
-	/** Return the expiration time in milliseconds of a session. */
-	public long getExpiration();
+	/** Return the storage. */
+	public SessionStorage getStorage();
 	
 }
