@@ -25,8 +25,8 @@ public class UDPClient implements Closeable {
 		manager = NetworkManager.get();
 	}
 	
-	private NetworkManager manager;
-	private SocketAddress target;
+	private final NetworkManager manager;
+	private final SocketAddress target;
 	private DatagramChannel channel;
 	private TurnArray<Pair<ByteBuffer, SynchronizationPoint<IOException>>> toSend = new TurnArray<>();
 	
@@ -90,6 +90,7 @@ public class UDPClient implements Closeable {
 		if (channel != null) return;
 		channel = DatagramChannel.open();
 		channel.configureBlocking(false);
+		channel.connect(target); // to avoid security checks on every send
 	}
 	
 	@Override
