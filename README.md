@@ -17,14 +17,14 @@ Main functionalities:
 ### Current version - branch master
 
 [![Maven Central](https://img.shields.io/maven-central/v/net.lecousin.framework.network/core.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22net.lecousin.framework.network%22%20AND%20a%3A%22core%22)
-[![Javadoc](https://img.shields.io/badge/javadoc-0.3.4-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.3.4)
+[![Javadoc](https://img.shields.io/badge/javadoc-0.4.0-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.4.0)
 
 ![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=master "Build Status")
 ![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=master&svg=true "Build Status")
 [![Codecov](https://codecov.io/gh/lecousin/java-framework-network-core/graph/badge.svg)](https://codecov.io/gh/lecousin/java-framework-network-core/branch/master)
 
-### Branch 0.3
+### Development branch
 
-![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=0.3 "Build Status")
-![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=0.3&svg=true "Build Status")
-[![Codecov](https://codecov.io/gh/lecousin/java-framework-network-core/branch/0.3/graph/badge.svg)](https://codecov.io/gh/lecousin/java-framework-network-core/branch/0.3)
+![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=dev "Build Status")
+![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=dev&svg=true "Build Status")
+[![Codecov](https://codecov.io/gh/lecousin/java-framework-network-core/branch/dev/graph/badge.svg)](https://codecov.io/gh/lecousin/java-framework-network-core/branch/dev)
