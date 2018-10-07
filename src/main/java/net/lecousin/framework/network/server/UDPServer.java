@@ -14,9 +14,9 @@ import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.exception.NoException;
-import net.lecousin.framework.io.IO;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -75,18 +75,34 @@ public class UDPServer implements Closeable {
 	
 	/** Listen to the given address. */
 	@SuppressWarnings("resource")
-	public SocketAddress bind(SocketAddress local) throws IOException {
-		DatagramChannel channel = DatagramChannel.open();
-		channel.bind(local);
-		channel.configureBlocking(false);
-		Channel c = new Channel(channel);
-		try { c.key = manager.register(channel, SelectionKey.OP_READ, c, 0).blockResult(0); }
-		catch (Exception e) { throw IO.error(e); }
-		channels.add(c);
-		local = channel.getLocalAddress();
-		if (manager.getLogger().info())
-			manager.getLogger().info("New UDP server listening on " + local.toString());
-		return local;
+	public AsyncWork<SocketAddress, IOException> bind(SocketAddress local) {
+		AsyncWork<SocketAddress, IOException> result = new AsyncWork<>();
+		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+			DatagramChannel channel;
+			try {
+				channel = DatagramChannel.open();
+				channel.bind(local);
+				channel.configureBlocking(false);
+			} catch (IOException e) {
+				result.error(e);
+				return;
+			}
+			Channel c = new Channel(channel);
+			AsyncWork<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_READ, c, 0);
+			accept.listenAsync(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+				c.key = accept.getResult();
+				channels.add(c);
+				try {
+					SocketAddress addr = channel.getLocalAddress();
+					if (manager.getLogger().info())
+						manager.getLogger().info("New UDP server listening at " + addr.toString());
+					result.unblockSuccess(addr);
+				} catch (IOException e) {
+					result.error(e);
+				}
+			}), result);
+		}).start();
+		return result;
 	}
 	
 	/** A channel the server is listening to. */

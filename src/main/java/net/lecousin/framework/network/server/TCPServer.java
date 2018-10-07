@@ -16,6 +16,8 @@ import java.util.List;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.CancelException;
+import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.synch.AsyncWork;
 import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
 import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
 import net.lecousin.framework.io.IO;
@@ -82,18 +84,34 @@ public class TCPServer implements Closeable {
 	 * The backlog parameter is the maximum number of pending connections on the socket.
 	 */
 	@SuppressWarnings("resource")
-	public SocketAddress bind(SocketAddress local, int backlog) throws IOException {
-		ServerSocketChannel channel = ServerSocketChannel.open();
-		channel.configureBlocking(false);
-		channel.bind(local, backlog);
-		ServerChannel sc = new ServerChannel(channel);
-		try { sc.key = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0).blockResult(0); }
-		catch (Exception e) { throw IO.error(e); }
-		channels.add(sc);
-		local = channel.getLocalAddress();
-		if (manager.getLogger().info())
-			manager.getLogger().info("New TCP server listening at " + local.toString());
-		return local;
+	public AsyncWork<SocketAddress, IOException> bind(SocketAddress local, int backlog) {
+		AsyncWork<SocketAddress, IOException> result = new AsyncWork<>();
+		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+			ServerSocketChannel channel;
+			try {
+				channel = ServerSocketChannel.open();
+				channel.configureBlocking(false);
+				channel.bind(local, backlog);
+			} catch (IOException e) {
+				result.error(e);
+				return;
+			}
+			ServerChannel sc = new ServerChannel(channel);
+			AsyncWork<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
+			accept.listenAsync(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+				sc.key = accept.getResult();
+				channels.add(sc);
+				try {
+					SocketAddress addr = channel.getLocalAddress();
+					if (manager.getLogger().info())
+						manager.getLogger().info("New TCP server listening at " + addr.toString());
+					result.unblockSuccess(addr);
+				} catch (IOException e) {
+					result.error(e);
+				}
+			}), result);
+		}).start();
+		return result;
 	}
 	
 	/** Stop listening to all ports and addresses. */

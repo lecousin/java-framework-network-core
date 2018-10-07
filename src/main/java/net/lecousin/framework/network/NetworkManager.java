@@ -78,7 +78,7 @@ public class NetworkManager implements Closeable {
 		 */
 		public ByteBuffer allocateReceiveBuffer();
 		
-		/** Called when an error occus while receiving data. The buffer may be null in case of timeout. */
+		/** Called when an error occurs while receiving data. The buffer may be null in case of timeout. */
 		public void receiveError(IOException error, ByteBuffer buffer);
 	}
 	
@@ -231,6 +231,10 @@ public class NetworkManager implements Closeable {
 	public <T extends SelectableChannel & NetworkChannel> AsyncWork<SelectionKey, IOException> register(
 		T channel, int ops, Listener listener, int timeout
 	) {
+		if (channel == null) {
+			logger.error("Null channel given to NetworkManager.register", new Exception());
+			return new AsyncWork<>(null, new IOException("Cannot register a null channel"));
+		}
 		if ((ops & SelectionKey.OP_ACCEPT) != 0)
 			if (!(listener instanceof Server)) {
 				logger.error("Invalid listener for ACCEPT: " + listener.getClass().getName(), new Exception());
@@ -281,7 +285,8 @@ public class NetworkManager implements Closeable {
 				if (stop) break;
 				Set<SelectionKey> keys = selector.selectedKeys();
 				if (!keys.isEmpty()) {
-					if (logger.trace()) logger.trace(keys.size() + " network channels are ready for operations");
+					boolean trace = logger.trace();
+					if (trace) logger.trace(keys.size() + " network channels are ready for operations");
 					loopCount++;
 					for (Iterator<SelectionKey> it = keys.iterator(); it.hasNext(); ) {
 						SelectionKey key = it.next();
@@ -292,7 +297,7 @@ public class NetworkManager implements Closeable {
 							continue;
 						}
 						int ops = key.readyOps();
-						if (logger.trace()) logger.trace("Ready operation: " + ops + " for " + key.toString());
+						if (trace) logger.trace("Ready operation: " + ops + " for " + key.toString());
 						if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 							Server server = listeners.onAccept;
 							try {
@@ -306,7 +311,7 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
 							// a socket is connected
 							Client client = listeners.onConnect;
-							if (logger.trace())
+							if (trace)
 								logger.trace("A socket is ready to be connected: " + key.channel().toString());
 							try {
 								((SocketChannel)key.channel()).finishConnect();
@@ -331,7 +336,7 @@ public class NetworkManager implements Closeable {
 									TCPReceiver tcp = (TCPReceiver)receiver;
 									int nb = ((ReadableByteChannel)key.channel()).read(buffer);
 									if (nb < 0) {
-										if (logger.trace())
+										if (trace)
 											logger.trace("End of stream reached for socket: "
 												+ key.channel().toString());
 										key.interestOps(0);
@@ -382,7 +387,7 @@ public class NetworkManager implements Closeable {
 								key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
 								listeners.onWrite = null;
 								listeners.onWriteTimeout = 0;
-								if (logger.trace())
+								if (trace)
 									logger.trace("Socket ready to send data on " + key.channel());
 								readyToSend(sender);
 							} catch (CancelledKeyException e) {

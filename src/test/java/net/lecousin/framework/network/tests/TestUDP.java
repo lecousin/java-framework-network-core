@@ -73,7 +73,7 @@ public class TestUDP extends AbstractNetworkTest {
 			UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
 			SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
 			for (int i = 0; i < 1000; ++i)
-				client.send(ByteBuffer.wrap(buf), i == 99 ? last : null);
+				client.send(ByteBuffer.wrap(buf), i == 999 ? last : null);
 			last.blockThrow(15000);
 			client.close();
 		} finally {

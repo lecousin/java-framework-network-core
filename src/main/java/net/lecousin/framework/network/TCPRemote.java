@@ -31,4 +31,7 @@ public interface TCPRemote {
 	/** Call the given listener when the TCP connection is closed. */
 	void onclosed(Runnable listener);
 	
+	/** Return true if the remote is closed. */
+	boolean isClosed();
+	
 }
