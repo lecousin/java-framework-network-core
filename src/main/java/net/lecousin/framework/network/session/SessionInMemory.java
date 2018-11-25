@@ -17,9 +17,10 @@ import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.encoding.HexaDecimalEncoder;
 import net.lecousin.framework.memory.IMemoryManageable;
 import net.lecousin.framework.memory.MemoryManager;
-import net.lecousin.framework.util.IDManager;
-import net.lecousin.framework.util.IDManagerRandomLong;
+import net.lecousin.framework.util.IDManagerString;
+import net.lecousin.framework.util.IDManagerStringFromLong;
 import net.lecousin.framework.util.Pair;
+import net.lecousin.framework.util.RandomIDManagerLong;
 import net.lecousin.framework.util.StringEncoding;
 
 /**
@@ -29,11 +30,11 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 
 	/** Constructor. */
 	public SessionInMemory(long expiration) {
-		this(new IDManagerRandomLong(new StringEncoding.EncodedLong(new HexaDecimalEncoder())), expiration);
+		this(new IDManagerStringFromLong(new RandomIDManagerLong(), new StringEncoding.EncodedLong(new HexaDecimalEncoder())), expiration);
 	}
 	
 	/** Constructor. */
-	public SessionInMemory(IDManager idManager, long expiration) {
+	public SessionInMemory(IDManagerString idManager, long expiration) {
 		this.idManager = idManager;
 		this.expiration = expiration;
 		if (expiration > 0) {
@@ -45,7 +46,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	}
 	
 	private HashMap<String, Pair<Long,List<Pair<String, Serializable>>>> sessions = new HashMap<>(100);
-	private IDManager idManager;
+	private IDManagerString idManager;
 	private long expiration;
 	private Task<Void, NoException> checkExpirationTask;
 	

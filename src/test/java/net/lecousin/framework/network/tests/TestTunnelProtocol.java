@@ -68,7 +68,7 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 	public void test() throws Exception {
 		TCPServer server = new TCPServer();
 		server.setProtocol(new TestTunnel());
-		server.bind(new InetSocketAddress("localhost", 12345), 10);
+		server.bind(new InetSocketAddress("localhost", 12345), 10).blockThrow(0);
 		
 		TCPClient client = new TCPClient();
 		client.connect(new InetSocketAddress("localhost", 12345), 10000).blockThrow(0);

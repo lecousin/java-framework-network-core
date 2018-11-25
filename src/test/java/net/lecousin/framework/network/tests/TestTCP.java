@@ -289,30 +289,30 @@ public class TestTCP extends AbstractNetworkTest {
 	public static void launchTCPServer() throws Exception {
 		server = new TCPServer();
 		server.setProtocol(new TestProtocol());
-		server.bind(new InetSocketAddress("localhost", 9999), 0);
+		server.bind(new InetSocketAddress("localhost", 9999), 0).blockThrow(0);
 		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
 		if (ipv6 != null)
-			server.bind(new InetSocketAddress(ipv6, 9999), 0);
+			server.bind(new InetSocketAddress(ipv6, 9999), 0).blockThrow(0);
 		serverSSL = new TCPServer();
 		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
-		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0);
+		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0).blockThrow(0);
 		if (ipv6 != null)
-			serverSSL.bind(new InetSocketAddress(ipv6, 9998), 0);
+			serverSSL.bind(new InetSocketAddress(ipv6, 9998), 0).blockThrow(0);
 		echoServer = new TCPServer();
 		echoServer.setProtocol(new EchoProtocol());
-		echoServer.bind(new InetSocketAddress("localhost", 9997), 0);
+		echoServer.bind(new InetSocketAddress("localhost", 9997), 0).blockThrow(0);
 		if (ipv6 != null)
-			echoServer.bind(new InetSocketAddress(ipv6, 9997), 0);
+			echoServer.bind(new InetSocketAddress(ipv6, 9997), 0).blockThrow(0);
 		sendDataServer = new TCPServer();
 		sendDataServer.setProtocol(new SendDataProtocol());
-		sendDataServer.bind(new InetSocketAddress("localhost", 9996), 0);
+		sendDataServer.bind(new InetSocketAddress("localhost", 9996), 0).blockThrow(0);
 		if (ipv6 != null)
-			sendDataServer.bind(new InetSocketAddress(ipv6, 9996), 0);
+			sendDataServer.bind(new InetSocketAddress(ipv6, 9996), 0).blockThrow(0);
 		receiveDataServer = new TCPServer();
 		receiveDataServer.setProtocol(new ReceiveDataProtocol());
-		receiveDataServer.bind(new InetSocketAddress("localhost", 9995), 0);
+		receiveDataServer.bind(new InetSocketAddress("localhost", 9995), 0).blockThrow(0);
 		if (ipv6 != null)
-			receiveDataServer.bind(new InetSocketAddress(ipv6, 9995), 0);
+			receiveDataServer.bind(new InetSocketAddress(ipv6, 9995), 0).blockThrow(0);
 		
 		Assert.assertTrue(server.getProtocol() instanceof TestProtocol);
 		Assert.assertEquals(0, server.getConnectedClients().size());

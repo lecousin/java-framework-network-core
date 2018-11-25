@@ -20,7 +20,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 	public void testBlockIP() throws Exception {
 		TCPServer server = new TCPServer();
 		server.setProtocol(new TestProtocol());
-		server.bind(new InetSocketAddress("localhost", 9999), 0);
+		server.bind(new InetSocketAddress("localhost", 9999), 0).blockThrow(0);
 		
 		// check we can connect
 		TCPClient client = new TCPClient();
