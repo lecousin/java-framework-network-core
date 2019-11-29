@@ -8,7 +8,7 @@ import java.util.Random;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.security.NetworkSecurity;
@@ -65,18 +65,18 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	}
 	
 	@Override
-	public AsyncWork<Session, NoException> get(String id, TCPRemote client) {
+	public AsyncSupplier<Session, NoException> get(String id, TCPRemote client) {
 		if (id == null) return null;
 		if (id.length() != 3 * 16) {
 			NetworkSecurity.possibleBruteForceAttack(client, securityApplication, "Session", id);
-			return new AsyncWork<>(null, null);
+			return new AsyncSupplier<>(null, null);
 		}
 		Session session = new Session(id);
 		String sid = id.substring(16, id.length() - 16);
-		AsyncWork<Boolean, Exception> loadSession = storage.load(sid, session);
+		AsyncSupplier<Boolean, Exception> loadSession = storage.load(sid, session);
 		String ts = id.substring(0,16);
 		String r = id.substring(id.length() - 16);
-		AsyncWork<Session, NoException> result = new AsyncWork<>();
+		AsyncSupplier<Session, NoException> result = new AsyncSupplier<>();
 		Runnable check = () -> {
 			if (loadSession.hasError()) {
 				LCCore.getApplication().getDefaultLogger().error("Error loading session " + sid, loadSession.getError());
@@ -88,10 +88,10 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 			else
 				result.unblockSuccess(checkSession(session, client, ts, r, sid));
 		};
-		if (loadSession.isUnblocked()) {
+		if (loadSession.isDone()) {
 			check.run();
 		} else
-			loadSession.listenAsync(new Task.Cpu.FromRunnable("Check newtork session", Task.PRIORITY_NORMAL, check), true);
+			loadSession.thenStart(new Task.Cpu.FromRunnable("Check newtork session", Task.PRIORITY_NORMAL, check), true);
 		return result;
 	}
 	

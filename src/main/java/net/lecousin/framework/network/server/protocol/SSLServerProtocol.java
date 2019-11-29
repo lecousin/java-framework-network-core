@@ -9,7 +9,7 @@ import java.util.LinkedList;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.ssl.SSLLayer;
 
@@ -111,7 +111,7 @@ public class SSLServerProtocol implements ServerProtocol {
 		}
 		
 		@Override
-		public SynchronizationPoint<IOException> sendEmpty(ByteBuffer data) throws ClosedChannelException {
+		public Async<IOException> sendEmpty(ByteBuffer data) throws ClosedChannelException {
 			return client.send(data, false);
 		}
 		

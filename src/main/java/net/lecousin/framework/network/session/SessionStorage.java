@@ -2,8 +2,8 @@ package net.lecousin.framework.network.session;
 
 import java.io.Closeable;
 
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.IAsync;
 
 /**
  * A SessionStorage is able to save and load sessions.
@@ -16,7 +16,7 @@ public interface SessionStorage extends Closeable {
 	public String allocateId() throws Exception;
 	
 	/** Load a session, returns false if the session does not exist or expired. */
-	public AsyncWork<Boolean, Exception> load(String id, ISession session);
+	public AsyncSupplier<Boolean, Exception> load(String id, ISession session);
 	
 	/** Remove a session, which must not be loaded. */
 	public void remove(String id);
@@ -25,7 +25,7 @@ public interface SessionStorage extends Closeable {
 	public void release(String id);
 	
 	/** Save a session. */
-	public ISynchronizationPoint<Exception> save(String id, ISession session);
+	public IAsync<Exception> save(String id, ISession session);
 	
 	/** Return the time in milliseconds after a session expires, 0 or negative value means never. */
 	public long getExpiration();

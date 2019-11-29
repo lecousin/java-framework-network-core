@@ -10,9 +10,9 @@ import java.util.Map;
 import java.util.Set;
 
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.encoding.HexaDecimalEncoder;
 import net.lecousin.framework.memory.IMemoryManageable;
@@ -68,18 +68,18 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	}
 	
 	@Override
-	public AsyncWork<Boolean, Exception> load(String id, ISession session) {
+	public AsyncSupplier<Boolean, Exception> load(String id, ISession session) {
 		Pair<Long, List<Pair<String, Serializable>>> s;
 		synchronized (this) { s = sessions.get(id); }
-		if (s == null) return new AsyncWork<>(Boolean.FALSE, null);
+		if (s == null) return new AsyncSupplier<>(Boolean.FALSE, null);
 		long now = System.currentTimeMillis();
 		if (expiration > 0 && now - s.getValue1().longValue() >= expiration) {
 			remove(id);
-			return new AsyncWork<>(Boolean.FALSE, null);
+			return new AsyncSupplier<>(Boolean.FALSE, null);
 		}
 		for (Pair<String, Serializable> p : s.getValue2())
 			session.putData(p.getValue1(), p.getValue2());
-		return new AsyncWork<>(Boolean.TRUE, null);
+		return new AsyncSupplier<>(Boolean.TRUE, null);
 	}
 	
 	@Override
@@ -93,7 +93,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	}
 	
 	@Override
-	public ISynchronizationPoint<Exception> save(String id, ISession session) {
+	public IAsync<Exception> save(String id, ISession session) {
 		Set<String> keys = session.getKeys();
 		ArrayList<Pair<String, Serializable>> list = new ArrayList<>(keys.size());
 		for (String key : keys)
@@ -101,7 +101,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 		synchronized (sessions) {
 			sessions.put(id, new Pair<>(Long.valueOf(System.currentTimeMillis()), list));
 		}
-		return new SynchronizationPoint<>(true);
+		return new Async<>(true);
 	}
 	
 	@Override

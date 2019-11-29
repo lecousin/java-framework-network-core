@@ -9,13 +9,14 @@ import java.util.ArrayList;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.CancelException;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.FileIO;
+import net.lecousin.framework.io.serialization.SerializationException;
 import net.lecousin.framework.io.serialization.TypeDefinition;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.xml.serialization.XMLDeserializer;
@@ -60,12 +61,12 @@ public class NetworkSecurity {
 	@SuppressWarnings({ "resource", "unchecked" })
 	public static void init() {
 		net.lecousin.framework.application.Application app = LCCore.getApplication();
-		SynchronizationPoint<NoException> init;
+		Async<NoException> init;
 		boolean existingInit = false;
 		synchronized (NetworkSecurity.class) {
-			init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+			init = (Async<NoException>)app.getData(INIT_DATA_NAME);
 			if (init == null) {
-				init = new SynchronizationPoint<>();
+				init = new Async<>();
 				app.setData(INIT_DATA_NAME, init);
 			} else
 				existingInit = true;
@@ -85,7 +86,7 @@ public class NetworkSecurity {
 		Config config = null;
 		if (file.exists()) {
 			try (FileIO.ReadOnly input = new FileIO.ReadOnly(file, Task.PRIORITY_IMPORTANT)) {
-				AsyncWork<Object, Exception> res =
+				AsyncSupplier<Object, SerializationException> res =
 					new XMLDeserializer(null, "Security").deserialize(
 						new TypeDefinition(Config.class), input, new ArrayList<>(0));
 				config = (Config)res.blockResult(0);
@@ -153,7 +154,7 @@ public class NetworkSecurity {
 						System.err.println("Unable to remove previous file " + file.getAbsolutePath());
 					}
 				try (FileIO.WriteOnly output = new FileIO.WriteOnly(file, Task.PRIORITY_IMPORTANT)) {
-					ISynchronizationPoint<Exception> ser =
+					IAsync<SerializationException> ser =
 						new XMLSerializer(null, "Security", null, StandardCharsets.UTF_8, 4096, true)
 							.serialize(cfg, new TypeDefinition(Config.class), output, new ArrayList<>(0));
 					ser.blockThrow(0);
@@ -174,10 +175,10 @@ public class NetworkSecurity {
 	@SuppressWarnings("unchecked")
 	public static NetworkSecurity get() {
 		Application app = LCCore.getApplication();
-		SynchronizationPoint<NoException> init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+		Async<NoException> init = (Async<NoException>)app.getData(INIT_DATA_NAME);
 		if (init == null) {
 			init();
-			init = (SynchronizationPoint<NoException>)app.getData(INIT_DATA_NAME);
+			init = (Async<NoException>)app.getData(INIT_DATA_NAME);
 		}
 		init.block(0);
 		return app.getInstance(NetworkSecurity.class);

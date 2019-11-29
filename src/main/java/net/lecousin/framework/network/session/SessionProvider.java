@@ -2,7 +2,7 @@ package net.lecousin.framework.network.session;
 
 import java.io.Closeable;
 
-import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.exception.NoException;
 
 /**
@@ -12,7 +12,7 @@ import net.lecousin.framework.exception.NoException;
 public interface SessionProvider<T> extends Closeable {
 
 	/** Retrieve a session with an id and the client. */
-	public AsyncWork<Session, NoException> get(String id, T client);
+	public AsyncSupplier<Session, NoException> get(String id, T client);
 	
 	/** Create a new session for the client. */
 	public Session create(T client);

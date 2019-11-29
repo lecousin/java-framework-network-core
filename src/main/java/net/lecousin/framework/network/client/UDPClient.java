@@ -9,8 +9,8 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.CancelException;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.CancelException;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -28,7 +28,7 @@ public class UDPClient implements Closeable {
 	private final NetworkManager manager;
 	private final SocketAddress target;
 	private DatagramChannel channel;
-	private TurnArray<Pair<ByteBuffer, SynchronizationPoint<IOException>>> toSend = new TurnArray<>();
+	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
 	
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
@@ -44,7 +44,7 @@ public class UDPClient implements Closeable {
 		public void readyToSend() {
 			boolean needsMore = false; 
 			while (true) {
-				Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+				Pair<ByteBuffer, Async<IOException>> p;
 				synchronized (toSend) {
 					if (toSend.isEmpty()) break;
 					p = toSend.getFirst();
@@ -100,7 +100,7 @@ public class UDPClient implements Closeable {
 			catch (Throwable e) { /* ignore */ }
 			channel = null;
 			synchronized (toSend) {
-				Pair<ByteBuffer, SynchronizationPoint<IOException>> p;
+				Pair<ByteBuffer, Async<IOException>> p;
 				while ((p = toSend.pollFirst()) != null) {
 					if (p.getValue2() != null)
 						p.getValue2().cancel(new CancelException("Channel closed"));
@@ -115,7 +115,7 @@ public class UDPClient implements Closeable {
 	 * @param data the data to send
 	 * @param onSent unblocked when the data has been fully sent or an error occured. Can be null.
 	 */
-	public void send(ByteBuffer data, SynchronizationPoint<IOException> onSent) {
+	public void send(ByteBuffer data, Async<IOException> onSent) {
 		if (data.remaining() == 0) {
 			if (onSent != null) onSent.unblock();
 			return;

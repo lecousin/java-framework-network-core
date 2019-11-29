@@ -4,13 +4,13 @@ jdk:
   - openjdk8
 dist: trusty
 
-script: mvn test verify -B
+addons:
+  sonarcloud:
+    organization: "lecousin"
+    token:
+      secure: suuy1JyQtvjf2fKQ4D5Alq0PVJPNhk7ueEpbq+mHEUh2DAUXQcSMFbth1/6OH8taqztSGq4P5c8Qck03cncsSKXNDGaZQ5gO9xqmL2aUDPihppeKwX2gTW0e5PzDjCScxR71dpUCsnvdyvlM38nspGV13qpK6KfsOczHl2ATZwItRJITeRscv5vZ9OjwbiztBpx/u4th41+HtimdJ4vDwSG8IQKiY6Kg/hYGZu9IyTCww/UHDMWKuf01QX82g5bYfJ2IFQ69YevfBz8HVBB2cC8lrBZ2p9Y26vjdnpfob1VvSsZog55cxFjuYvI7hxsUifak7DwOkHCtx8IfPenAfMRoIPtt6kitqhD3b5Km7ITAmmKefrFVJw95jb9kHRd5cZF72MlCs3Wq1VEGXCJirmb32DlWGWWqp2A0TAiaEh6D0oaQ298tRp9pM13kZZpBJXXMCcd+iWe603+GGucIj289lStb7E2GxKMqWANJ6n6WHk+0ZYPSnIlklpZYXOM6YlHg4rKCOX0ZaSi6+r1wkcC1irNh6de6lWNiLpdFuVwKbDjCRT6JP2x8+Dcrlrzue1akpBuA+OSjkNFkYkCZcVnzKXcMnmJZm3LiSfEDxOGUx1B+xg8DMbZoPtl9DggGCvxvXIPReyfBlRivXuZrCFt3Zk+RuIOyCsp8rg6hcYI=
 
-after_script:
- - echo _____________CHECKSTYLE______________
- - cat */target/checkstyle-result.xml
- - echo _____________SOPTBUGS______________
- - cat */target/findbugsXml.xml
+script: mvn test verify install sonar:sonar -Dsonar.projectKey=lecousin_java-framework-network-core -Dsonar.projectName=java-framework-network-core -B
 
 after_success:
  - bash <(curl -s https://codecov.io/bash)

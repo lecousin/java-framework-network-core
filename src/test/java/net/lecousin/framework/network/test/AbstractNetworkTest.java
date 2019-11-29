@@ -21,7 +21,6 @@ import org.junit.BeforeClass;
 
 public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 
-	@SuppressWarnings("resource")
 	@BeforeClass
 	public static void initNetwork() throws Exception {
 		if (sslTest != null) return;

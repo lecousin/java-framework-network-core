@@ -64,7 +64,7 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 		};
 	}
 	
-	@Test(timeout=60000)
+	@Test
 	public void test() throws Exception {
 		TCPServer server = new TCPServer();
 		server.setProtocol(new TestTunnel());

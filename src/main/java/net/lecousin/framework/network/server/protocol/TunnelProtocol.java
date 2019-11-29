@@ -6,8 +6,8 @@ import java.nio.channels.ClosedChannelException;
 import java.util.LinkedList;
 
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
@@ -32,7 +32,7 @@ public class TunnelProtocol implements ServerProtocol {
 	/** Start tunnelling between the given client, and the given connected remote side. */
 	public void registerClient(TCPServerClient client, TCPClient tunnel) {
 		client.setAttribute(ATTRIBUTE_TUNNEL, tunnel);
-		client.setAttribute(ATTRIBUTE_LAST_SEND, new SynchronizationPoint<>(true));
+		client.setAttribute(ATTRIBUTE_LAST_SEND, new Async<>(true));
 		client.onclosed(() -> { tunnel.close(); });
 		tunnel.getReceiver().readForEver(bufferSize, -1, (data) -> {
 			if (data == null) {
@@ -66,9 +66,9 @@ public class TunnelProtocol implements ServerProtocol {
 	@Override
 	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 		@SuppressWarnings("unchecked")
-		SynchronizationPoint<IOException> previous = (SynchronizationPoint<IOException>)client.getAttribute(ATTRIBUTE_LAST_SEND);
-		boolean readAgain = previous.isUnblocked();
-		SynchronizationPoint<IOException> ls = new SynchronizationPoint<>();
+		Async<IOException> previous = (Async<IOException>)client.getAttribute(ATTRIBUTE_LAST_SEND);
+		boolean readAgain = previous.isDone();
+		Async<IOException> ls = new Async<>();
 		client.setAttribute(ATTRIBUTE_LAST_SEND, ls);
 		@SuppressWarnings("resource")
 		TCPClient tunnel = (TCPClient)client.getAttribute(ATTRIBUTE_TUNNEL);
@@ -80,9 +80,9 @@ public class TunnelProtocol implements ServerProtocol {
 			}
 		new Task.Cpu.FromRunnable("Forward data from client to remote", Task.PRIORITY_NORMAL, () -> {
 			if (logger.trace()) logger.trace("Data received from client: " + data.remaining());
-			ISynchronizationPoint<IOException> send = tunnel.send(data);
-			send.listenInline(onbufferavailable);
-			send.listenInline(ls);
+			IAsync<IOException> send = tunnel.send(data);
+			send.onDone(onbufferavailable);
+			send.onDone(ls);
 			if (!readAgain)
 				try { client.waitForData(0); }
 				catch (ClosedChannelException e) { tunnel.close(); }

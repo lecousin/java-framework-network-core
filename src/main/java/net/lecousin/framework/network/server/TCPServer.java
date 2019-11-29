@@ -12,20 +12,19 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
-import net.lecousin.framework.io.IO;
+import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.CancelException;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
-import net.lecousin.framework.util.Provider;
 
 /** TCP Server.<br/>
  * A {@link ServerProtocol} must be associated to handle clients.<br/>
@@ -83,9 +82,8 @@ public class TCPServer implements Closeable {
 	/** Listen to the given address, with the given backlog.
 	 * The backlog parameter is the maximum number of pending connections on the socket.
 	 */
-	@SuppressWarnings("resource")
-	public AsyncWork<SocketAddress, IOException> bind(SocketAddress local, int backlog) {
-		AsyncWork<SocketAddress, IOException> result = new AsyncWork<>();
+	public AsyncSupplier<SocketAddress, IOException> bind(SocketAddress local, int backlog) {
+		AsyncSupplier<SocketAddress, IOException> result = new AsyncSupplier<>();
 		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
 			ServerSocketChannel channel;
 			try {
@@ -97,8 +95,8 @@ public class TCPServer implements Closeable {
 				return;
 			}
 			ServerChannel sc = new ServerChannel(channel);
-			AsyncWork<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
-			accept.listenAsync(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
+			accept.thenStart(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
 				sc.key = accept.getResult();
 				channels.add(sc);
 				try {
@@ -116,7 +114,7 @@ public class TCPServer implements Closeable {
 	
 	/** Stop listening to all ports and addresses. */
 	public void unbindAll() {
-		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
+		List<IAsync<IOException>> sp = new LinkedList<>();
 		for (ServerChannel channel : channels) {
 			if (manager.getLogger().info())
 				manager.getLogger().info("Closing TCP server: " + channel.channel.toString());
@@ -125,7 +123,7 @@ public class TCPServer implements Closeable {
 			catch (IOException e) { manager.getLogger().error("Error closing TCP server", e); }
 			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
-		for (ISynchronizationPoint<IOException> s : sp)
+		for (IAsync<IOException> s : sp)
 			s.block(5000);
 		channels.clear();
 		ArrayList<Client> list;
@@ -181,11 +179,11 @@ public class TCPServer implements Closeable {
 		SocketChannel channel;
 		private TCPServerClient publicInterface;
 		private ArrayList<ByteBuffer> inputBuffers = new ArrayList<>();
-		private LinkedList<Pair<ByteBuffer,SynchronizationPoint<IOException>>> outputBuffers = new LinkedList<>();
+		private LinkedList<Pair<ByteBuffer,Async<IOException>>> outputBuffers = new LinkedList<>();
 		private boolean waitToSend = false;
 		private boolean closeAfterLastOutput = false;
-		private Provider<ByteBuffer> dataToSendProvider = null;
-		private SynchronizationPoint<IOException> dataToSendSP = null;
+		private Supplier<ByteBuffer> dataToSendProvider = null;
+		private Async<IOException> dataToSendSP = null;
 		
 		public TCPServer getServer() {
 			return TCPServer.this;
@@ -211,8 +209,8 @@ public class TCPServer implements Closeable {
 				try { c.close(); }
 				catch (Throwable e) { /* ignore */ }
 			while (!publicInterface.pending.isEmpty()) {
-				ISynchronizationPoint<?> sp = publicInterface.pending.pollFirst();
-				if (!sp.isUnblocked()) sp.cancel(new CancelException("Client connection closed"));
+				IAsync<?> sp = publicInterface.pending.pollFirst();
+				if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
 			}
 			publicInterface = null;
 			inputBuffers = null;
@@ -271,7 +269,7 @@ public class TCPServer implements Closeable {
 				synchronized (inputBuffers) { inputBuffers.add(buffer); }
 		}
 		
-		synchronized SynchronizationPoint<IOException> send(ByteBuffer buf, boolean closeAfter) throws ClosedChannelException {
+		synchronized Async<IOException> send(ByteBuffer buf, boolean closeAfter) throws ClosedChannelException {
 			if (channel == null) throw new ClosedChannelException();
 			// ask the protocol to do any needed processing before sending the data
 			LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
@@ -293,7 +291,7 @@ public class TCPServer implements Closeable {
 					catch (IOException e) {
 						// error while writing
 						close();
-						return new SynchronizationPoint<>(e);
+						return new Async<>(e);
 					}
 					if (manager.getLogger().debug()) manager.getLogger().debug(nb + " bytes sent on " + channel);
 					if (!buffer.hasRemaining()) {
@@ -302,7 +300,7 @@ public class TCPServer implements Closeable {
 						if (buffers.isEmpty()) {
 							// no more buffer
 							if (closeAfter) close();
-							return new SynchronizationPoint<>(true);
+							return new Async<>(true);
 						}
 						continue;
 					}
@@ -311,7 +309,7 @@ public class TCPServer implements Closeable {
 				if (buffer != null) buffers.addFirst(buffer);
 				waitToSend = true;
 			}
-			SynchronizationPoint<IOException> sp = new SynchronizationPoint<>();
+			Async<IOException> sp = new Async<>();
 			while (!buffers.isEmpty()) {
 				ByteBuffer b = buffers.removeFirst();
 				outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
@@ -327,12 +325,12 @@ public class TCPServer implements Closeable {
 			synchronized (Client.this) {
 				if (outputBuffers == null || channel == null) return;
 				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
-					outputBuffers.add(new Pair<>(dataToSendProvider.provide(), dataToSendSP));
+					outputBuffers.add(new Pair<>(dataToSendProvider.get(), dataToSendSP));
 					dataToSendProvider = null;
 					dataToSendSP = null;
 				}
 				while (outputBuffers != null && !outputBuffers.isEmpty()) {
-					Pair<ByteBuffer,SynchronizationPoint<IOException>> toWrite = outputBuffers.getFirst();
+					Pair<ByteBuffer,Async<IOException>> toWrite = outputBuffers.getFirst();
 					int nb;
 					do {
 						try { nb = channel.write(toWrite.getValue1()); }
@@ -380,10 +378,10 @@ public class TCPServer implements Closeable {
 			}
 		}
 		
-		public void newDataToSendWhenPossible(Provider<ByteBuffer> dataProvider, SynchronizationPoint<IOException> sp) {
+		public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {
 			synchronized (this) {
-				Provider<ByteBuffer> prevProvider = dataToSendProvider;
-				SynchronizationPoint<IOException> prevSP = dataToSendSP;
+				Supplier<ByteBuffer> prevProvider = dataToSendProvider;
+				Async<IOException> prevSP = dataToSendSP;
 				dataToSendProvider = dataProvider;
 				dataToSendSP = sp;
 				if (!waitToSend && outputBuffers.isEmpty() && prevProvider == null)

@@ -9,12 +9,12 @@ import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.function.Supplier;
 
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.AttributesContainer;
 import net.lecousin.framework.network.TCPRemote;
-import net.lecousin.framework.util.Provider;
 
 /**
  * A client connected to a {@link TCPServer}.
@@ -28,7 +28,7 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	private TCPServer.Client privateInterface;
 	private HashMap<String,Object> attributes = new HashMap<>(20);
 	ArrayList<AutoCloseable> toClose = new ArrayList<>();
-	LinkedList<ISynchronizationPoint<?>> pending = new LinkedList<>();
+	LinkedList<IAsync<?>> pending = new LinkedList<>();
 	
 	@Override
 	public void setAttribute(String key, Object value) { attributes.put(key, value); }
@@ -48,14 +48,14 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	}
 	
 	/** Send data to this client. */
-	public SynchronizationPoint<IOException> send(ByteBuffer data, boolean closeAfter) throws ClosedChannelException {
+	public Async<IOException> send(ByteBuffer data, boolean closeAfter) throws ClosedChannelException {
 		return privateInterface.send(data, closeAfter);
 	}
 	
 	@Override
-	public ISynchronizationPoint<IOException> send(ByteBuffer data) {
+	public IAsync<IOException> send(ByteBuffer data) {
 		try { return send(data, false); }
-		catch (ClosedChannelException e) { return new SynchronizationPoint<>(e); }
+		catch (ClosedChannelException e) { return new Async<>(e); }
 	}
 
 	public boolean isClosed() {
@@ -83,10 +83,10 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	}
 	
 	/** Add a synchronization point that should be cancelled on client deconnection. */
-	public void addPending(ISynchronizationPoint<?> sp) {
-		if (sp.isUnblocked()) return;
+	public void addPending(IAsync<?> sp) {
+		if (sp.isDone()) return;
 		synchronized (pending) { pending.add(sp); }
-		sp.listenInline(() -> {
+		sp.onDone(() -> {
 			synchronized (pending) { pending.remove(sp); }
 		});
 	}
@@ -110,7 +110,7 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	 * Send data to this client, but instead of giving directly the data, a provider is given.
 	 */
 	@Override
-	public void newDataToSendWhenPossible(Provider<ByteBuffer> dataProvider, SynchronizationPoint<IOException> sp) {
+	public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {
 		privateInterface.newDataToSendWhenPossible(dataProvider, sp);
 	}
 	

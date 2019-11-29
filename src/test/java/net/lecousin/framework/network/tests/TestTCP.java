@@ -7,6 +7,7 @@ import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.SocketException;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
@@ -17,14 +18,9 @@ import java.util.LinkedList;
 
 import javax.net.ssl.SSLException;
 
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.log.Logger.Level;
@@ -42,8 +38,15 @@ import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.network.ssl.SSLLayer;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
-import net.lecousin.framework.util.Provider;
 
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.BlockJUnit4ClassRunner;
+
+@RunWith(BlockJUnit4ClassRunner.class)
 public class TestTCP extends AbstractNetworkTest {
 
 	private static TCPServer server;
@@ -68,7 +71,7 @@ public class TestTCP extends AbstractNetworkTest {
 			Closeable c = new Closeable() { @Override public void close() {} };
 			client.addToClose(c);
 			client.removeToClose(c);
-			SynchronizationPoint<Exception> sp = new SynchronizationPoint<>();
+			Async<Exception> sp = new Async<>();
 			client.addPending(sp);
 			sp.unblock();
 			client.addPending(sp);
@@ -154,7 +157,7 @@ public class TestTCP extends AbstractNetworkTest {
 		@Override
 		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 			System.out.println("Received from echo client: " + data.remaining());
-			client.send(data).listenInline(() -> {
+			client.send(data).onDone(() -> {
 				onbufferavailable.run();
 				try { client.waitForData(10000); }
 				catch (ClosedChannelException e) {
@@ -285,34 +288,42 @@ public class TestTCP extends AbstractNetworkTest {
 		
 	}
 	
+	private static SocketAddress ipv4Address;
+	private static SocketAddress ipv6Address;
+	private static SocketAddress ipv4SSLAddress;
+	private static SocketAddress ipv6SSLAddress;
+	private static SocketAddress ipv4EchoAddress;
+	private static SocketAddress ipv6EchoAddress;
+	private static SocketAddress ipv4DataAddress;
+	private static SocketAddress ipv4ReceiveAddress;
+	private static SocketAddress ipv6ReceiveAddress;
+	
 	@BeforeClass
 	public static void launchTCPServer() throws Exception {
 		server = new TCPServer();
 		server.setProtocol(new TestProtocol());
-		server.bind(new InetSocketAddress("localhost", 9999), 0).blockThrow(0);
+		ipv4Address = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
 		if (ipv6 != null)
-			server.bind(new InetSocketAddress(ipv6, 9999), 0).blockThrow(0);
+			ipv6Address = server.bind(new InetSocketAddress(ipv6, 0), 0).blockResult(0);
 		serverSSL = new TCPServer();
 		serverSSL.setProtocol(new SSLServerProtocol(sslTest, new TestProtocol()));
-		serverSSL.bind(new InetSocketAddress("localhost", 9998), 0).blockThrow(0);
+		ipv4SSLAddress = serverSSL.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		if (ipv6 != null)
-			serverSSL.bind(new InetSocketAddress(ipv6, 9998), 0).blockThrow(0);
+			ipv6SSLAddress = serverSSL.bind(new InetSocketAddress(ipv6, 0), 0).blockResult(0);
 		echoServer = new TCPServer();
 		echoServer.setProtocol(new EchoProtocol());
-		echoServer.bind(new InetSocketAddress("localhost", 9997), 0).blockThrow(0);
+		ipv4EchoAddress = echoServer.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		if (ipv6 != null)
-			echoServer.bind(new InetSocketAddress(ipv6, 9997), 0).blockThrow(0);
+			ipv6EchoAddress = echoServer.bind(new InetSocketAddress(ipv6, 0), 0).blockResult(0);
 		sendDataServer = new TCPServer();
 		sendDataServer.setProtocol(new SendDataProtocol());
-		sendDataServer.bind(new InetSocketAddress("localhost", 9996), 0).blockThrow(0);
-		if (ipv6 != null)
-			sendDataServer.bind(new InetSocketAddress(ipv6, 9996), 0).blockThrow(0);
+		ipv4DataAddress = sendDataServer.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		receiveDataServer = new TCPServer();
 		receiveDataServer.setProtocol(new ReceiveDataProtocol());
-		receiveDataServer.bind(new InetSocketAddress("localhost", 9995), 0).blockThrow(0);
+		ipv4ReceiveAddress = receiveDataServer.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		if (ipv6 != null)
-			receiveDataServer.bind(new InetSocketAddress(ipv6, 9995), 0).blockThrow(0);
+			ipv6ReceiveAddress = receiveDataServer.bind(new InetSocketAddress(ipv6, 0), 0).blockResult(0);
 		
 		Assert.assertTrue(server.getProtocol() instanceof TestProtocol);
 		Assert.assertEquals(0, server.getConnectedClients().size());
@@ -324,11 +335,12 @@ public class TestTCP extends AbstractNetworkTest {
 		serverSSL.close();
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testServer() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		server.getLocalAddresses();
-		Socket s = new Socket("localhost", 9999);
+		Socket s = new Socket();
+		s.connect(ipv4Address);
 		expect(s, "Welcome");
 		send(s, "I'm Tester");
 		expect(s, "Hello Tester");
@@ -341,10 +353,11 @@ public class TestTCP extends AbstractNetworkTest {
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		InetAddress ipv6 = NetUtil.getLoopbackIPv6Address();
+		s = new Socket();
 		if (ipv6 != null)
-			s = new Socket(ipv6, 9999);
+			s.connect(ipv6Address);
 		else
-			s = new Socket("localhost", 9999);
+			s.connect(ipv4Address);
 		expect(s, "Welcome");
 		send(s, "Hello");
 		expect(s, "I don't understand you");
@@ -353,20 +366,29 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testSSLServer() throws Exception {
-		Socket s = sslTest.getSocketFactory().createSocket("localhost", 9998);
+		Socket s = sslTest.getSocketFactory().createSocket();
+		s.connect(ipv4SSLAddress);
 		expect(s, "Welcome");
 		send(s, "I'm Secure Tester");
 		expect(s, "Hello Secure Tester");
 		s.close();
+		if (ipv6SSLAddress != null) {
+			s = sslTest.getSocketFactory().createSocket();
+			s.connect(ipv6SSLAddress);
+			expect(s, "Welcome");
+			send(s, "I'm Secure Tester");
+			expect(s, "Hello Secure Tester");
+			s.close();
+		}
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testTCPClient() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		TCPClient client = new TCPClient();
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		Async<IOException> sp = client.connect(ipv4Address, 10000);
 		sp.blockThrow(0);
 		client.getLocalAddress();
 		Assert.assertFalse(client.hasAttribute("test"));
@@ -382,8 +404,27 @@ public class TestTCP extends AbstractNetworkTest {
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		
+		if (ipv6Address != null) {
+			client = new TCPClient();
+			sp = client.connect(ipv6Address, 10000);
+			sp.blockThrow(0);
+			client.getLocalAddress();
+			Assert.assertFalse(client.hasAttribute("test"));
+			client.setAttribute("test", "true");
+			Assert.assertTrue(client.hasAttribute("test"));
+			Assert.assertEquals("true", client.getAttribute("test"));
+			Assert.assertEquals("true", client.removeAttribute("test"));
+			Assert.assertFalse(client.hasAttribute("test"));
+			expect(client, "Welcome");
+			send(client, "I'm Tester");
+			expect(client, "Hello Tester");
+			client.close();
+			try { Thread.sleep(1000); } catch (InterruptedException e) {}
+			Assert.assertEquals(0, server.getConnectedClients().size());
+		}
+		
 		client = new TCPClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 0);
+		sp = client.connect(ipv4Address, 0);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "Hello");
@@ -393,22 +434,17 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp = client.connect(ipv4Address, 10000);
 		sp.blockThrow(0);
 		Assert.assertArrayEquals("Welcome\n".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(8, 10000).blockResult(0));
-		sp = new SynchronizationPoint<>();
-		client.newDataToSendWhenPossible(new Provider<ByteBuffer>() {
-			@Override
-			public ByteBuffer provide() {
-				return ByteBuffer.wrap("test".getBytes());
-			}
-		}, sp);
+		sp = new Async<>();
+		client.newDataToSendWhenPossible(() -> ByteBuffer.wrap("test".getBytes()), sp);
 		client.close();
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp = client.connect(ipv4Address, 10000);
 		sp.blockThrow(0);
 		client.getReceiver().readAvailableBytes(10, 0).blockResult(0);
 		client.close();
@@ -416,13 +452,13 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		
 		client = new TCPClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp = client.connect(ipv4Address, 10000);
 		sp.blockThrow(0);
 		MutableBoolean closed = new MutableBoolean(false);
 		client.onclosed(() -> { closed.set(true); });
 		Assert.assertFalse(closed.get());
 		StringBuilder received = new StringBuilder();
-		SynchronizationPoint<Exception> spReceived = new SynchronizationPoint<>();
+		Async<Exception> spReceived = new Async<>();
 		client.getReceiver().readForEver(256, 0, (data) -> {
 			while (data.hasRemaining())
 				received.append((char)data.get());
@@ -444,10 +480,10 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testSSLClient() throws Exception {
 		SSLClient client = new SSLClient(sslTest);
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9998), 10000);
+		Async<IOException> sp = client.connect(ipv4SSLAddress, 10000);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "I'm Secure Tester");
@@ -455,13 +491,13 @@ public class TestTCP extends AbstractNetworkTest {
 		client.close();
 	}
 	
-	@Test(timeout=120000)
+	@Test
 	public void testFloodMe() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
 		TCPClient client = new TCPClient();
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		Async<IOException> sp = client.connect(ipv4Address, 10000);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "flood me");
@@ -483,14 +519,14 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
-	@Test(timeout=120000)
+	@Test
 	public void testFloodMeSSL() throws Exception {
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.INFO);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.INFO);
 		SSLClient client = new SSLClient(sslTest);
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9998), 10000);
+		Async<IOException> sp = client.connect(ipv4SSLAddress, 10000);
 		sp.blockThrow(0);
 		expect(client, "Welcome");
 		send(client, "flood me");
@@ -512,13 +548,13 @@ public class TestTCP extends AbstractNetworkTest {
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 	}
 	
-	@Test(timeout=120000)
+	@Test
 	public void testEcho() throws Exception {
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.DEBUG);
 		TCPClient client = new TCPClient();
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9997), 10000, new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
+		Async<IOException> sp = client.connect(ipv4EchoAddress, 10000, new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
 		sp.blockThrow(0);
 		byte[] data = new byte[100000];
 		for (int i = 0; i < data.length; ++i)
@@ -528,16 +564,34 @@ public class TestTCP extends AbstractNetworkTest {
 		for (int i = 0; i < 10; ++i)
 			Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
 		client.close();
+		if (ipv6EchoAddress != null) {
+			client = new TCPClient();
+			sp = client.connect(ipv6EchoAddress, 10000, new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
+			sp.blockThrow(0);
+			data = new byte[100000];
+			for (int i = 0; i < data.length; ++i)
+				data[i] = (byte)i;
+			for (int i = 0; i < 10; ++i)
+				client.send(ByteBuffer.wrap(data));
+			for (int i = 0; i < 10; ++i)
+				Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
+			client.close();
+		}
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 	}
 	
 	@SuppressWarnings("resource")
-	@Test(timeout=30000)
+	@Test
 	public void testInvalidConnection() throws Exception {
+		TCPServer closedServer = new TCPServer();
+		closedServer.setProtocol(new TestProtocol());
+		SocketAddress closedAddress = closedServer.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
+		closedServer.close();
+
 		TCPClient client = new TCPClient();
-		SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9990), 10000);
+		Async<IOException> sp = client.connect(closedAddress, 10000);
 		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
 		catch (ConnectException e) {
 			// expected
@@ -553,7 +607,7 @@ public class TestTCP extends AbstractNetworkTest {
 		client.close();
 		
 		client = new SSLClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9990), 10000);
+		sp = client.connect(closedAddress, 10000);
 		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
 		catch (ConnectException e) {
 			// expected
@@ -571,7 +625,7 @@ public class TestTCP extends AbstractNetworkTest {
 		
 		Assert.assertEquals(0, server.getConnectedClients().size());
 		client = new SSLClient();
-		sp = client.connect(new InetSocketAddress("localhost", 9999), 10000);
+		sp = client.connect(ipv4Address, 10000);
 		try { sp.blockThrow(0); throw new Exception("Connection should fail"); }
 		catch (SSLException e) {
 			// expected
@@ -581,34 +635,42 @@ public class TestTCP extends AbstractNetworkTest {
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 	
-	@Test(timeout=120000)
+	@Test
 	public void testSendDataClientToServer() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 			TCPClient client = new TCPClient();
-			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9995), 10000);
+			Async<IOException> sp = client.connect(ipv4ReceiveAddress, 10000);
 			sp.blockThrow(0);
 			sendDataLoop(client);
 			expect(client, "OK");
 			client.close();
+			if (ipv6ReceiveAddress != null) {
+				client = new TCPClient();
+				sp = client.connect(ipv6ReceiveAddress, 10000);
+				sp.blockThrow(0);
+				sendDataLoop(client);
+				expect(client, "OK");
+				client.close();
+			}
 		} finally {
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		}
 	}
 	
-	@Test(timeout=120000)
+	@Test
 	public void testSendDataServerToClient() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 			TCPClient client = new TCPClient();
-			SynchronizationPoint<IOException> sp = client.connect(new InetSocketAddress("localhost", 9996), 10000);
+			Async<IOException> sp = client.connect(ipv4DataAddress, 10000);
 			sp.blockThrow(0);
 			MutableInteger block = new MutableInteger(0);
-			Mutable<AsyncWork<byte[], IOException>> read = new Mutable<>(null);
-			SynchronizationPoint<IOException> end = new SynchronizationPoint<>();
+			Mutable<AsyncSupplier<byte[], IOException>> read = new Mutable<>(null);
+			Async<IOException> end = new Async<>();
 			Runnable listener = new Runnable() {
 				@Override
 				public void run() {
@@ -627,9 +689,9 @@ public class TestTCP extends AbstractNetworkTest {
 							break;
 						}
 						read.set(client.getReceiver().readBytes(BLOCK_SIZE, 10000));
-						if (read.get().isUnblocked())
+						if (read.get().isDone())
 							continue;
-						read.get().listenInline(this);
+						read.get().onDone(this);
 						break;
 					} while (true);
 				}
@@ -638,7 +700,7 @@ public class TestTCP extends AbstractNetworkTest {
 			try { Thread.sleep(2000); }
 			catch (InterruptedException e) {}
 			read.set(client.getReceiver().readBytes(BLOCK_SIZE, 10000));
-			read.get().listenInline(listener);
+			read.get().onDone(listener);
 			end.blockThrow(0);
 			try {
 				byte[] remaining = client.getReceiver().readBytes(BLOCK_SIZE, 1000).blockResult(0);
@@ -657,7 +719,6 @@ public class TestTCP extends AbstractNetworkTest {
 	
 	// --- Utilities
 	
-	@SuppressWarnings("resource")
 	public static void expect(Socket s, String message) throws Exception {
 		InputStream in = s.getInputStream();
 		StringBuilder msg = new StringBuilder();
@@ -673,7 +734,6 @@ public class TestTCP extends AbstractNetworkTest {
 	}
 	
 	public static void expect(TCPClient client, String message) throws Exception {
-		@SuppressWarnings("resource")
 		ByteArrayIO io = client.getReceiver().readUntil((byte)'\n', 128, 10000).blockResult(0);
 		Assert.assertEquals(message, io.getAsString(StandardCharsets.US_ASCII));
 	}

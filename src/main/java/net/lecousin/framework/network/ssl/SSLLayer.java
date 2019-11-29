@@ -18,8 +18,8 @@ import javax.net.ssl.SSLParameters;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
-import net.lecousin.framework.concurrent.synch.LockPoint;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.LockPoint;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.AttributesContainer;
@@ -54,7 +54,7 @@ public class SSLLayer {
 		void dataReceived(LinkedList<ByteBuffer> data);
 		
 		/** Send an empty buffer than must be encrypted by used the method encryptDataToSend before to send it to the network. */
-		ISynchronizationPoint<IOException> sendEmpty(ByteBuffer emptyBuffer) throws ClosedChannelException;
+		IAsync<IOException> sendEmpty(ByteBuffer emptyBuffer) throws ClosedChannelException;
 		
 	}
 
@@ -159,7 +159,7 @@ public class SSLLayer {
 								Task<Void,NoException> t = new Task.Cpu.FromRunnable(
 									task, "SSL Server Handshake task", Task.PRIORITY_NORMAL);
 								t.start();
-								t.getOutput().listenInline(new Runnable() {
+								t.getOutput().onDone(new Runnable() {
 									@Override
 									public void run() {
 										if (logger.debug())
@@ -172,8 +172,8 @@ public class SSLLayer {
 						}
 					case NEED_WRAP:
 						try {
-							ISynchronizationPoint<IOException> send = conn.sendEmpty(emptyBuffer);
-							send.listenInline(() -> {
+							IAsync<IOException> send = conn.sendEmpty(emptyBuffer);
+							send.onDone(() -> {
 								if (send.hasError()) {
 									conn.close();
 									return;

@@ -2,6 +2,7 @@ package net.lecousin.framework.network.tests;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
@@ -16,15 +17,15 @@ import org.junit.Test;
 public class TestSecurity extends LCCoreAbstractTest {
 
 	@SuppressWarnings("resource")
-	@Test(timeout=60000)
+	@Test
 	public void testBlockIP() throws Exception {
 		TCPServer server = new TCPServer();
 		server.setProtocol(new TestProtocol());
-		server.bind(new InetSocketAddress("localhost", 9999), 0).blockThrow(0);
+		SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		
 		// check we can connect
 		TCPClient client = new TCPClient();
-		client.connect(new InetSocketAddress("localhost", 9999), 5000).blockThrow(0);
+		client.connect(serverAddress, 5000).blockThrow(0);
 		ByteBuffer buf = client.receiveData(5, 5000).blockResult(0);
 		Assert.assertEquals(5, buf.remaining());
 		client.close();
@@ -33,7 +34,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		NetworkSecurity.blacklist("test", InetAddress.getByName("localhost"), 10000);
 		client = new TCPClient();
 		try {
-			client.connect(new InetSocketAddress("localhost", 9999), 5000).blockThrow(0);
+			client.connect(serverAddress, 5000).blockThrow(0);
 			buf = client.receiveData(5, 5000).blockResult(0);
 			if (buf != null && buf.remaining() > 0)
 				throw new AssertionError("Connection succeed while we are blacklisted");
@@ -44,7 +45,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		// unblack list
 		NetworkSecurity.unblacklist("test", InetAddress.getByName("localhost"));
 		client = new TCPClient();
-		client.connect(new InetSocketAddress("localhost", 9999), 5000).blockThrow(0);
+		client.connect(serverAddress, 5000).blockThrow(0);
 		buf = client.receiveData(5, 5000).blockResult(0);
 		Assert.assertEquals(5, buf.remaining());
 		client.close();
@@ -60,7 +61,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		server.close();
 	}
 	
-	@Test(timeout=60000)
+	@Test
 	public void testBruteForceAttack() throws Exception {
 		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");
 		NetworkSecurity.possibleBruteForceAttack(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test", "test");

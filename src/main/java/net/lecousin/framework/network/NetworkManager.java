@@ -23,7 +23,7 @@ import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.log.Logger;
@@ -160,7 +160,7 @@ public class NetworkManager implements Closeable {
 		private int newOps;
 		private Listener listener;
 		private int timeout;
-		private AsyncWork<SelectionKey, IOException> result;
+		private AsyncSupplier<SelectionKey, IOException> result;
 	}
 	
 	private static class Attachment {
@@ -228,39 +228,39 @@ public class NetworkManager implements Closeable {
 	 * @param ops operations (see {@link SelectionKey}
 	 * @param listener listener that must implement the interfaces according to the requested operations
 	 */
-	public <T extends SelectableChannel & NetworkChannel> AsyncWork<SelectionKey, IOException> register(
+	public <T extends SelectableChannel & NetworkChannel> AsyncSupplier<SelectionKey, IOException> register(
 		T channel, int ops, Listener listener, int timeout
 	) {
 		if (channel == null) {
 			logger.error("Null channel given to NetworkManager.register", new Exception());
-			return new AsyncWork<>(null, new IOException("Cannot register a null channel"));
+			return new AsyncSupplier<>(null, new IOException("Cannot register a null channel"));
 		}
 		if ((ops & SelectionKey.OP_ACCEPT) != 0)
 			if (!(listener instanceof Server)) {
 				logger.error("Invalid listener for ACCEPT: " + listener.getClass().getName(), new Exception());
-				return new AsyncWork<>(null, new IOException("Invalid listener"));
+				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_CONNECT) != 0)
 			if (!(listener instanceof Client)) {
 				logger.error("Invalid listener for CONNECT: " + listener.getClass().getName(), new Exception());
-				return new AsyncWork<>(null, new IOException("Invalid listener"));
+				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_READ) != 0)
 			if (!(listener instanceof Receiver)) {
 				logger.error("Invalid listener for READ: " + listener.getClass().getName(), new Exception());
-				return new AsyncWork<>(null, new IOException("Invalid listener"));
+				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
 			}
 		if ((ops & SelectionKey.OP_WRITE) != 0)
 			if (!(listener instanceof Sender)) {
 				logger.error("Invalid listener for WRITE: " + listener.getClass().getName(), new Exception());
-				return new AsyncWork<>(null, new IOException("Invalid listener"));
+				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
 			}
 		RegisterRequest req = new RegisterRequest();
 		req.channel = channel;
 		req.newOps = ops;
 		req.listener = listener;
 		req.timeout = timeout;
-		req.result = new AsyncWork<>();
+		req.result = new AsyncSupplier<>();
 		if (logger.trace())
 			logger.trace("Registering channel " + channel + " for operations " + ops + " with timeout " + timeout);
 		synchronized (requests) {

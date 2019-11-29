@@ -14,7 +14,7 @@ import net.lecousin.framework.network.session.SessionInMemory;
 
 public class TestSession extends LCCoreAbstractTest {
 
-	@Test(timeout=60000)
+	@Test
 	public void testSessionInMemory() throws Exception {
 		SessionInMemory sm = new SessionInMemory(0);
 		Assert.assertFalse(sm.load("123", new Session("")).blockResult(0).booleanValue());

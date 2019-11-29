@@ -14,8 +14,8 @@ import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.synch.AsyncWork;
-import net.lecousin.framework.concurrent.synch.ISynchronizationPoint;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
@@ -55,7 +55,7 @@ public class UDPServer implements Closeable {
 	
 	@Override
 	public void close() {
-		List<ISynchronizationPoint<IOException>> sp = new LinkedList<>();
+		List<IAsync<IOException>> sp = new LinkedList<>();
 		for (Channel channel : channels) {
 			if (manager.getLogger().info())
 				manager.getLogger().info("Closing UDP server: " + channel.channel.toString());
@@ -67,7 +67,7 @@ public class UDPServer implements Closeable {
 			}
 			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
 		}
-		for (ISynchronizationPoint<IOException> s : sp)
+		for (IAsync<IOException> s : sp)
 			s.block(5000);
 		channels.clear();
 		app.closed(this);
@@ -75,8 +75,8 @@ public class UDPServer implements Closeable {
 	
 	/** Listen to the given address. */
 	@SuppressWarnings("resource")
-	public AsyncWork<SocketAddress, IOException> bind(SocketAddress local) {
-		AsyncWork<SocketAddress, IOException> result = new AsyncWork<>();
+	public AsyncSupplier<SocketAddress, IOException> bind(SocketAddress local) {
+		AsyncSupplier<SocketAddress, IOException> result = new AsyncSupplier<>();
 		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
 			DatagramChannel channel;
 			try {
@@ -88,8 +88,8 @@ public class UDPServer implements Closeable {
 				return;
 			}
 			Channel c = new Channel(channel);
-			AsyncWork<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_READ, c, 0);
-			accept.listenAsync(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_READ, c, 0);
+			accept.thenStart(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
 				c.key = accept.getResult();
 				channels.add(c);
 				try {

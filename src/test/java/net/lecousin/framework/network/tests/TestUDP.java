@@ -8,8 +8,8 @@ import java.nio.channels.DatagramChannel;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
-import net.lecousin.framework.concurrent.synch.JoinPoint;
-import net.lecousin.framework.concurrent.synch.SynchronizationPoint;
+import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.UDPClient;
 import net.lecousin.framework.network.server.UDPServer;
@@ -20,10 +20,14 @@ import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.BlockJUnit4ClassRunner;
 
+@RunWith(BlockJUnit4ClassRunner.class)
 public class TestUDP extends AbstractNetworkTest {
 
 	private static UDPServer server;
+	private static SocketAddress serverAddress;
 	
 	@BeforeClass
 	public static void launchUDPServer() throws Exception {
@@ -37,7 +41,7 @@ public class TestUDP extends AbstractNetworkTest {
 				reply.reply(r);
 			}
 		});
-		server.bind(new InetSocketAddress("localhost", 9999));
+		serverAddress = server.bind(new InetSocketAddress("localhost", 0)).blockResult(0);
 	}
 	
 	@AfterClass
@@ -45,14 +49,14 @@ public class TestUDP extends AbstractNetworkTest {
 		server.close();
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testSendMessagesToServer() throws Exception {
 		send("Hello".getBytes());
 		send("Test 2".getBytes());
 		send("abcdefghijklmnopqrstuvwxyz".getBytes());
 	}
 	
-	@Test(timeout=30000)
+	@Test
 	public void testUDPClient() throws Exception {
 		JoinPoint<IOException> jp = new JoinPoint<>();
 		jp.addToJoin(sendClient("Hello".getBytes()));
@@ -62,7 +66,7 @@ public class TestUDP extends AbstractNetworkTest {
 		jp.blockThrow(0);
 	}
 
-	@Test(timeout=120000)
+	@Test
 	public void testSendManyMessages() throws Exception {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
@@ -70,8 +74,8 @@ public class TestUDP extends AbstractNetworkTest {
 			byte[] buf = new byte[32768];
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
-			UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
-			SynchronizationPoint<IOException> last = new SynchronizationPoint<>();
+			UDPClient client = new UDPClient(serverAddress);
+			Async<IOException> last = new Async<>();
 			for (int i = 0; i < 1000; ++i)
 				client.send(ByteBuffer.wrap(buf), i == 999 ? last : null);
 			last.blockThrow(15000);
@@ -85,7 +89,7 @@ public class TestUDP extends AbstractNetworkTest {
 	@SuppressWarnings("resource")
 	private static void send(byte[] message) throws Exception {
 		DatagramChannel channel = DatagramChannel.open();
-		channel.send(ByteBuffer.wrap(message), new InetSocketAddress("localhost", 9999));
+		channel.send(ByteBuffer.wrap(message), serverAddress);
 		byte[] b = new byte[message.length + 100];
 		ByteBuffer reply = ByteBuffer.wrap(b);
 		channel.receive(reply);
@@ -99,11 +103,11 @@ public class TestUDP extends AbstractNetworkTest {
 	}
 
 	@SuppressWarnings("resource")
-	private static SynchronizationPoint<IOException> sendClient(byte[] message) {
-		UDPClient client = new UDPClient(new InetSocketAddress("localhost", 9999));
+	private static Async<IOException> sendClient(byte[] message) {
+		UDPClient client = new UDPClient(serverAddress);
 		client.send(ByteBuffer.wrap(message), null);
 		byte[] b = new byte[message.length + 100];
-		SynchronizationPoint<IOException> sp = new SynchronizationPoint<>();
+		Async<IOException> sp = new Async<>();
 		client.waitForAnswer(ByteBuffer.wrap(b), new UDPClient.AnswerListener() {
 			@Override
 			public void timeout() {
