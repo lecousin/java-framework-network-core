@@ -5,6 +5,7 @@ import java.net.InetSocketAddress;
 import org.junit.Assert;
 import org.junit.Test;
 
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
 import net.lecousin.framework.memory.IMemoryManageable.FreeMemoryLevel;
 import net.lecousin.framework.network.client.TCPClient;
@@ -71,7 +72,7 @@ public class TestSession extends LCCoreAbstractTest {
 	@Test
 	public void testNetworkSessionProvider() throws Exception {
 		SessionInMemory sm = new SessionInMemory(5000);
-		NetworkSessionProvider sp = new NetworkSessionProvider(sm, "test");
+		NetworkSessionProvider sp = new NetworkSessionProvider(sm, LCCore.getApplication());
 		Assert.assertEquals(5000, sp.getStorage().getExpiration());
 		TCPClient client = new TCPClient();
 		client.connect(new InetSocketAddress("www.google.com", 80), 10000).blockThrow(0);

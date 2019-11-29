@@ -11,8 +11,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.function.Supplier;
 
-import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.network.AttributesContainer;
 import net.lecousin.framework.network.TCPRemote;
 
@@ -42,7 +42,9 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	@Override
 	public boolean hasAttribute(String name) { return attributes.containsKey(name); }
 	
-	/** Signal we are expecting data from this client. */
+	/** Signal we are expecting data from this client.
+	 * @param timeout timeout in milliseconds
+	 */
 	public void waitForData(int timeout) throws ClosedChannelException {
 		privateInterface.waitForData(timeout);
 	}
@@ -58,6 +60,7 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 		catch (ClosedChannelException e) { return new Async<>(e); }
 	}
 
+	@Override
 	public boolean isClosed() {
 		return privateInterface.isClosed();
 	}
@@ -92,18 +95,12 @@ public class TCPServerClient implements AttributesContainer, Closeable, TCPRemot
 	}
 	
 	/** Called when this client is closed, and closes associated resources. */
-	@SuppressWarnings("resource")
 	@Override
 	public void onclosed(Runnable r) {
 		if (privateInterface.isClosed())
 			r.run();
 		else
-			toClose.add(new Closeable() {
-				@Override
-				public void close() {
-					r.run();
-				}
-			});
+			toClose.add(r::run);
 	}
 	
 	/**

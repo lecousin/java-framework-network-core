@@ -8,7 +8,7 @@ import net.lecousin.framework.network.server.TCPServerClient;
 /** Interface to implement a protocol on server-side. */
 public interface ServerProtocol {
 
-	public static final String ATTRIBUTE_CONNECTION_ESTABLISHED_NANOTIME = "protocol.connection_started";
+	String ATTRIBUTE_CONNECTION_ESTABLISHED_NANOTIME = "protocol.connection_started";
 	
 	/**
 	 * Called when a new client connects on the server.
@@ -16,13 +16,13 @@ public interface ServerProtocol {
 	 * and then should call the method waitForData on the given client. 
 	 * @param client the newly connected client
 	 */
-	public void startProtocol(TCPServerClient client);
+	void startProtocol(TCPServerClient client);
 	
 	/**
 	 * Returns the size of the buffer which will be allocated to receive data from the client.
 	 * @return the size of the buffer which will be allocated to receive data from the client
 	 */
-	public int getInputBufferSize();
+	int getInputBufferSize();
 	
 	/**
 	 * Called when data has been received from the client.
@@ -38,7 +38,7 @@ public interface ServerProtocol {
 	 * @param data the data received
 	 * @param onbufferavailable to be called to signal the given buffer can be reused to receive new data
 	 */
-	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable);
+	void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable);
 	
 	/**
 	 * Called before to send data to the client. It allows a protocol to do any needed transformation before sending it.
@@ -47,6 +47,6 @@ public interface ServerProtocol {
 	 * @param data the data which has to be sent
 	 * @return the new data to be sent
 	 */
-	public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data);
+	LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data);
 	
 }

@@ -12,18 +12,18 @@ import net.lecousin.framework.exception.NoException;
 public interface SessionProvider<T> extends Closeable {
 
 	/** Retrieve a session with an id and the client. */
-	public AsyncSupplier<Session, NoException> get(String id, T client);
+	AsyncSupplier<Session, NoException> get(String id, T client);
 	
 	/** Create a new session for the client. */
-	public Session create(T client);
+	Session create(T client);
 	
 	/** Save the session. */
-	public void save(Session session, T client);
+	void save(Session session, T client);
 	
 	/** Destroy a session. */
-	public void destroy(Session session);
+	void destroy(Session session);
 	
 	/** Return the storage. */
-	public SessionStorage getStorage();
+	SessionStorage getStorage();
 	
 }

@@ -1,215 +1,45 @@
 package net.lecousin.framework.network.security;
 
+import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import net.lecousin.framework.application.Application;
 import net.lecousin.framework.io.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.network.NetUtil;
+import net.lecousin.framework.network.TCPRemote;
 
 /**
  * Store a possible brute force attempt (in other word a wrong password).
  */
-public class BruteForceAttempt {
+public class BruteForceAttempt implements NetworkSecurityFeature {
+	
+	/** Plug-in class. */
+	public static class Plugin implements NetworkSecurityPlugin {
 
-	static class Mapping {
-		
-		private Map<String, Map<String, Map<Integer, Attempt>>> ipv4 = new HashMap<>(5);
-		private Map<String, Map<String, Map<Long, Map<Long, Attempt>>>> ipv6 = new HashMap<>(5);
+		@Override
+		public Class<?> getConfigurationClass() {
+			return Config.class;
+		}
 
-		public static class Attempt {
-			public String lastValue;
-			public long lastTime;
-			public int attempts;
-		}
-		
-		Mapping(Config cfg) {
-			if (cfg != null && cfg.attempt != null)
-				for (Config.Attempt ca : cfg.attempt) {
-					if (ca.ip == null) continue;
-					if (ca.ip.length == 4) {
-						Map<String, Map<Integer, Attempt>> m1 = ipv4.get(ca.application);
-						if (m1 == null) {
-							m1 = new HashMap<>(5);
-							ipv4.put(ca.application, m1);
-						}
-						Map<Integer, Attempt> m2 = m1.get(ca.functionality);
-						if (m2 == null) {
-							m2 = new HashMap<>(50);
-							m1.put(ca.functionality, m2);
-						}
-						Attempt a = new Attempt();
-						a.lastTime = ca.lastTime;
-						a.lastValue = ca.lastValue;
-						a.attempts = ca.attempts;
-						m2.put(Integer.valueOf(DataUtil.readIntegerLittleEndian(ca.ip, 0)), a);
-					} else {
-						Map<String, Map<Long, Map<Long, Attempt>>> m1 = ipv6.get(ca.application);
-						if (m1 == null) {
-							m1 = new HashMap<>(5);
-							ipv6.put(ca.application, m1);
-						}
-						Map<Long, Map<Long, Attempt>> m2 = m1.get(ca.functionality);
-						if (m2 == null) {
-							m2 = new HashMap<>(50);
-							m1.put(ca.functionality, m2);
-						}
-						Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 0));
-						Map<Long, Attempt> m3 = m2.get(ip1);
-						if (m3 == null) {
-							m3 = new HashMap<>(20);
-							m2.put(ip1, m3);;
-						}
-						Attempt a = new Attempt();
-						a.lastTime = ca.lastTime;
-						a.lastValue = ca.lastValue;
-						a.attempts = ca.attempts;
-						Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 8));
-						m3.put(ip2, a);
-					}
-				}
-		}
-		
-		private static final long BRUTE_FORCE_ATTACK_DELAY = 10 * 60 * 1000; // after 10 minutes, previous attempts expire
-		private static final int BRUTE_FORCE_ATTACK_MAX_ATTEMPTS = 10; // we allow 10 attempts before to black list
-		private static final long BRUTE_FORCE_ATTACK_BLACK_LIST_TIME = 15 * 60 * 1000; // black list for 15 minutes
-		
-		public void attempt(InetAddress address, String application, String functionality, String value) {
-			boolean bl = false;
-			synchronized (this) {
-				NetworkSecurity.updated = true;
-				if (address instanceof Inet4Address) {
-					Integer ip = Integer.valueOf(address.hashCode());
-					Map<String, Map<Integer, Attempt>> map1 = ipv4.get(application);
-					if (map1 == null) {
-						map1 = new HashMap<>(5);
-						ipv4.put(application, map1);
-					}
-					Map<Integer, Attempt> map2 = map1.get(functionality);
-					if (map2 == null) {
-						map2 = new HashMap<>(50);
-						map1.put(functionality, map2);
-					}
-					Attempt a = map2.get(ip);
-					if (a == null) {
-						a = new Attempt();
-						a.attempts = 1;
-						a.lastTime = System.currentTimeMillis();
-						a.lastValue = value;
-						map2.put(ip, a);
-						return;
-					}
-					if (System.currentTimeMillis() - a.lastTime > BRUTE_FORCE_ATTACK_DELAY) {
-						a.lastTime = System.currentTimeMillis();
-						a.lastValue = value;
-						a.attempts = 1;
-						return;
-					}
-
-					a.lastTime = System.currentTimeMillis();
-					if (a.lastValue.equals(value))
-						return;
-					a.lastValue = value;
-					if (++a.attempts >= BRUTE_FORCE_ATTACK_MAX_ATTEMPTS)
-						bl = true;
-				}
-				if (address instanceof Inet6Address) {
-					byte[] ip = address.getAddress();
-					Map<String, Map<Long, Map<Long, Attempt>>> map1 = ipv6.get(application);
-					if (map1 == null) {
-						map1 = new HashMap<>(5);
-						ipv6.put(application, map1);
-					}
-					Map<Long, Map<Long, Attempt>> map2 = map1.get(functionality);
-					if (map2 == null) {
-						map2 = new HashMap<>(50);
-						map1.put(functionality, map2);
-					}
-					Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
-					Map<Long, Attempt> map3 = map2.get(ip1);
-					if (map3 == null) {
-						map3 = new HashMap<>(20);
-						map2.put(ip1, map3);
-					}
-					Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
-					Attempt a = map3.get(ip2);
-					if (a == null) {
-						a = new Attempt();
-						a.attempts = 1;
-						a.lastTime = System.currentTimeMillis();
-						a.lastValue = value;
-						map3.put(ip2, a);
-						return;
-					}
-					if (System.currentTimeMillis() - a.lastTime > BRUTE_FORCE_ATTACK_DELAY) {
-						a.lastTime = System.currentTimeMillis();
-						a.lastValue = value;
-						a.attempts = 1;
-						return;
-					}
-					a.lastTime = System.currentTimeMillis();
-					if (a.lastValue.equals(value))
-						return;
-					a.lastValue = value;
-					if (++a.attempts >= BRUTE_FORCE_ATTACK_MAX_ATTEMPTS)
-						bl = true;
-				}
-			}
-			if (bl)
-				NetworkSecurity.blacklist(IPBlackList.CATEGORY_BRUTE_FORCE_ATTACK, address, BRUTE_FORCE_ATTACK_BLACK_LIST_TIME);
-		}
-		
-		public void clean() {
-			synchronized (this) {
-				for (Iterator<Map<String, Map<Integer, Attempt>>> it1 = ipv4.values().iterator(); it1.hasNext(); ) {
-					Map<String, Map<Integer, Attempt>> m1 = it1.next();
-					for (Iterator<Map<Integer, Attempt>> it2 = m1.values().iterator(); it2.hasNext(); ) {
-						Map<Integer, Attempt> m2 = it2.next();
-						for (Iterator<Attempt> it3 = m2.values().iterator(); it3.hasNext(); ) {
-							if (System.currentTimeMillis() - it3.next().lastTime > BRUTE_FORCE_ATTACK_DELAY) {
-								it3.remove();
-								NetworkSecurity.updated = true;
-							}
-						}
-						if (m2.isEmpty())
-							it2.remove();
-					}
-					if (m1.isEmpty())
-						it1.remove();
-				}
-				
-				for (Iterator<Map<String, Map<Long, Map<Long, Attempt>>>> it1 = ipv6.values().iterator(); it1.hasNext(); ) {
-					Map<String, Map<Long, Map<Long, Attempt>>> m1 = it1.next();
-					for (Iterator<Map<Long, Map<Long, Attempt>>> it2 = m1.values().iterator(); it2.hasNext(); ) {
-						Map<Long, Map<Long, Attempt>> m2 = it2.next();
-						for (Iterator<Map<Long, Attempt>> it3 = m2.values().iterator(); it3.hasNext(); ) {
-							Map<Long, Attempt> m3 = it3.next();
-							for (Iterator<Attempt> it4 = m3.values().iterator(); it4.hasNext(); ) {
-								if (System.currentTimeMillis() - it4.next().lastTime > BRUTE_FORCE_ATTACK_DELAY) {
-									it4.remove();
-									NetworkSecurity.updated = true;
-								}
-							}
-							if (m3.isEmpty())
-								it3.remove();
-						}
-						if (m2.isEmpty())
-							it2.remove();
-					}
-					if (m1.isEmpty())
-						it1.remove();
-				}
-			}
+		@Override
+		public NetworkSecurityFeature newInstance(Application app, Object configuration) {
+			return new BruteForceAttempt(app, (Config)configuration);
 		}
 		
 	}
-	
+
+	public static final String IP_BLACKLIST_CATEGORY = "Brute Force";
+
 	/** Configuration. */
+	@SuppressWarnings({"squid:ClassVariableVisibilityCheck", "squid:S1319"})
 	public static class Config {
 		
 		public ArrayList<Attempt> attempt;
@@ -218,61 +48,240 @@ public class BruteForceAttempt {
 		@TypeSerializer(NetUtil.IPSerializer.class)
 		public static class Attempt {
 			public byte[] ip;
-			public String application;
 			public String functionality;
 			public String lastValue;
 			public long lastTime;
 			public int attempts;
 		}
 		
-		/** Constructor. */
-		public Config() {}
+	}
+	
+
+	private NetworkSecurity security;
+	private Map<String, Map<Integer, Attempt>> ipv4 = new HashMap<>(5);
+	private Map<String, Map<Long, Map<Long, Attempt>>> ipv6 = new HashMap<>(5);
+	private boolean updated = false;
+
+	private long attackDelay;
+	private int attackMaxAttempts;
+	private long attackBlackListTime;
+	
+	private static class Attempt {
+		private String lastValue;
+		private long lastTime;
+		private int attempts;
+	}
 		
-		Config(Mapping m) {
-			attempt = new ArrayList<>();
-			for (Map.Entry<String, Map<String, Map<Integer, Mapping.Attempt>>> e1 : m.ipv4.entrySet()) {
-				String app = e1.getKey();
-				for (Map.Entry<String, Map<Integer, Mapping.Attempt>> e2 : e1.getValue().entrySet()) {
-					String func = e2.getKey();
-					for (Map.Entry<Integer, Mapping.Attempt> e3 : e2.getValue().entrySet()) {
-						Attempt a = new Attempt();
-						a.application = app;
+	private BruteForceAttempt(Application app, Config cfg) {
+		try { attackDelay = Long.parseLong(app.getProperty("brute_force_attack.delay")); }
+		catch (Exception e) { attackDelay = 10L * 60 * 1000; } // default to 10 minutes
+
+		try { attackMaxAttempts = Integer.parseInt(app.getProperty("brute_force_attack.max_attemptes")); }
+		catch (Exception e) { attackMaxAttempts = 10; } // default to 10
+		
+		try { attackBlackListTime = Long.parseLong(app.getProperty("brute_force_attack.black_list_delay")); }
+		catch (Exception e) { attackBlackListTime = 15L * 60 * 1000; } // default to 15 minutes
+		
+		security = NetworkSecurity.get(app);
+		
+		if (cfg != null && cfg.attempt != null)
+			for (Config.Attempt ca : cfg.attempt) {
+				if (ca.ip == null) continue;
+				if (ca.ip.length == 4) {
+					Map<Integer, Attempt> m = ipv4.get(ca.functionality);
+					if (m == null) {
+						m = new HashMap<>(5);
+						ipv4.put(ca.functionality, m);
+					}
+					Attempt a = new Attempt();
+					a.lastTime = ca.lastTime;
+					a.lastValue = ca.lastValue;
+					a.attempts = ca.attempts;
+					m.put(Integer.valueOf(DataUtil.readIntegerLittleEndian(ca.ip, 0)), a);
+				} else {
+					Map<Long, Map<Long, Attempt>> m = ipv6.get(ca.functionality);
+					if (m == null) {
+						m = new HashMap<>(5);
+						ipv6.put(ca.functionality, m);
+					}
+					Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 0));
+					Map<Long, Attempt> m2 = m.get(ip1);
+					if (m2 == null) {
+						m2 = new HashMap<>(20);
+						m.put(ip1, m2);
+					}
+					Attempt a = new Attempt();
+					a.lastTime = ca.lastTime;
+					a.lastValue = ca.lastValue;
+					a.attempts = ca.attempts;
+					Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 8));
+					m2.put(ip2, a);
+				}
+			}
+	}
+	
+	/** Signal an attempt from the given address. */
+	public void attempt(InetAddress address, String functionality, String value) {
+		boolean bl = false;
+		synchronized (this) {
+			updated = true;
+			if (address instanceof Inet4Address) {
+				Integer ip = Integer.valueOf(address.hashCode());
+				Map<Integer, Attempt> map = ipv4.get(functionality);
+				if (map == null) {
+					map = new HashMap<>(5);
+					ipv4.put(functionality, map);
+				}
+				Attempt a = map.get(ip);
+				if (a == null) {
+					a = new Attempt();
+					a.attempts = 1;
+					a.lastTime = System.currentTimeMillis();
+					a.lastValue = value;
+					map.put(ip, a);
+					return;
+				}
+				if (System.currentTimeMillis() - a.lastTime > attackDelay) {
+					a.lastTime = System.currentTimeMillis();
+					a.lastValue = value;
+					a.attempts = 1;
+					return;
+				}
+
+				a.lastTime = System.currentTimeMillis();
+				if (a.lastValue.equals(value))
+					return;
+				a.lastValue = value;
+				if (++a.attempts >= attackMaxAttempts)
+					bl = true;
+			}
+			if (address instanceof Inet6Address) {
+				byte[] ip = address.getAddress();
+				Map<Long, Map<Long, Attempt>> map = ipv6.get(functionality);
+				if (map == null) {
+					map = new HashMap<>(5);
+					ipv6.put(functionality, map);
+				}
+				Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
+				Map<Long, Attempt> mapIp = map.get(ip1);
+				if (mapIp == null) {
+					mapIp = new HashMap<>(20);
+					map.put(ip1, mapIp);
+				}
+				Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
+				Attempt a = mapIp.get(ip2);
+				if (a == null) {
+					a = new Attempt();
+					a.attempts = 1;
+					a.lastTime = System.currentTimeMillis();
+					a.lastValue = value;
+					mapIp.put(ip2, a);
+					return;
+				}
+				if (System.currentTimeMillis() - a.lastTime > attackDelay) {
+					a.lastTime = System.currentTimeMillis();
+					a.lastValue = value;
+					a.attempts = 1;
+					return;
+				}
+				a.lastTime = System.currentTimeMillis();
+				if (a.lastValue.equals(value))
+					return;
+				a.lastValue = value;
+				if (++a.attempts >= attackMaxAttempts)
+					bl = true;
+			}
+		}
+		if (bl)
+			security.getFeature(IPBlackList.class).blacklist(IP_BLACKLIST_CATEGORY, address, attackBlackListTime);
+	}
+	
+	/** Signal an attempt from the given client. */
+	public void attempt(TCPRemote client, String functionality, String value) {
+		try {
+			attempt(((InetSocketAddress)client.getRemoteAddress()).getAddress(), functionality, value);
+		} catch (IOException e) {
+			// ignore
+		}
+	}
+	
+	@Override
+	public void clean() {
+		synchronized (this) {
+			for (Iterator<Map<Integer, Attempt>> it1 = ipv4.values().iterator(); it1.hasNext(); ) {
+				Map<Integer, Attempt> m = it1.next();
+				for (Iterator<Attempt> it2 = m.values().iterator(); it2.hasNext(); ) {
+					if (System.currentTimeMillis() - it2.next().lastTime > attackDelay) {
+						it2.remove();
+						updated = true;
+					}
+				}
+				if (m.isEmpty())
+					it1.remove();
+			}
+			
+			for (Iterator<Map<Long, Map<Long, Attempt>>> it1 = ipv6.values().iterator(); it1.hasNext(); ) {
+				Map<Long, Map<Long, Attempt>> m1 = it1.next();
+				for (Iterator<Map<Long, Attempt>> it2 = m1.values().iterator(); it2.hasNext(); ) {
+					Map<Long, Attempt> m2 = it2.next();
+					for (Iterator<Attempt> it3 = m2.values().iterator(); it3.hasNext(); ) {
+						if (System.currentTimeMillis() - it3.next().lastTime > attackDelay) {
+							it3.remove();
+							updated = true;
+						}
+					}
+					if (m2.isEmpty())
+						it2.remove();
+				}
+				if (m1.isEmpty())
+					it1.remove();
+			}
+		}
+	}
+	
+	@Override
+	public Object getConfigurationIfChanged() {
+		Config cfg = new Config();
+		cfg.attempt = new ArrayList<>();
+		synchronized (this) {
+			if (!updated)
+				return null;
+			updated = false;
+			for (Map.Entry<String, Map<Integer, Attempt>> e1 : ipv4.entrySet()) {
+				String func = e1.getKey();
+				for (Map.Entry<Integer, Attempt> e2 : e1.getValue().entrySet()) {
+					Config.Attempt a = new Config.Attempt();
+					a.functionality = func;
+					a.ip = new byte[4];
+					DataUtil.writeIntegerLittleEndian(a.ip, 0, e2.getKey().intValue());
+					Attempt ma = e2.getValue();
+					a.lastValue = ma.lastValue;
+					a.lastTime = ma.lastTime;
+					a.attempts = ma.attempts;
+					cfg.attempt.add(a);
+				}
+			}
+			for (Map.Entry<String, Map<Long, Map<Long, Attempt>>> e1 : ipv6.entrySet()) {
+				String func = e1.getKey();
+				for (Map.Entry<Long, Map<Long, Attempt>> e2 : e1.getValue().entrySet()) {
+					Long ip1 = e2.getKey();
+					for (Map.Entry<Long, Attempt> e3 : e2.getValue().entrySet()) {
+						Config.Attempt a = new Config.Attempt();
 						a.functionality = func;
-						a.ip = new byte[4];
-						DataUtil.writeIntegerLittleEndian(a.ip, 0, e3.getKey().intValue());
-						Mapping.Attempt ma = e3.getValue();
+						a.ip = new byte[16];
+						Long ip2 = e3.getKey();
+						DataUtil.writeLongLittleEndian(a.ip, 0, ip1.longValue());
+						DataUtil.writeLongLittleEndian(a.ip, 8, ip2.longValue());
+						Attempt ma = e3.getValue();
 						a.lastValue = ma.lastValue;
 						a.lastTime = ma.lastTime;
 						a.attempts = ma.attempts;
-						attempt.add(a);
-					}
-				}
-			}
-			for (Map.Entry<String, Map<String, Map<Long, Map<Long, Mapping.Attempt>>>> e1 : m.ipv6.entrySet()) {
-				String app = e1.getKey();
-				for (Map.Entry<String, Map<Long, Map<Long, Mapping.Attempt>>> e2 : e1.getValue().entrySet()) {
-					String func = e2.getKey();
-					for (Map.Entry<Long, Map<Long, Mapping.Attempt>> e3 : e2.getValue().entrySet()) {
-						Long ip1 = e3.getKey();
-						for (Map.Entry<Long, Mapping.Attempt> e4 : e3.getValue().entrySet()) {
-							Attempt a = new Attempt();
-							a.application = app;
-							a.functionality = func;
-							a.ip = new byte[16];
-							Long ip2 = e4.getKey();
-							DataUtil.writeLongLittleEndian(a.ip, 0, ip1.longValue());
-							DataUtil.writeLongLittleEndian(a.ip, 8, ip2.longValue());
-							Mapping.Attempt ma = e4.getValue();
-							a.lastValue = ma.lastValue;
-							a.lastTime = ma.lastTime;
-							a.attempts = ma.attempts;
-							attempt.add(a);
-						}
+						cfg.attempt.add(a);
 					}
 				}
 			}
 		}
-		
+		return cfg;
 	}
 	
 }

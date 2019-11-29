@@ -5,12 +5,14 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Random;
 
+import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.TCPRemote;
+import net.lecousin.framework.network.security.BruteForceAttempt;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.util.StringUtil;
 
@@ -22,13 +24,13 @@ import net.lecousin.framework.util.StringUtil;
 public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 
 	/** Constructor. */
-	public NetworkSessionProvider(SessionStorage storage, String securityApplication) {
+	public NetworkSessionProvider(SessionStorage storage, Application app) {
 		this.storage = storage;
-		this.securityApplication = securityApplication;
+		this.app = app;
 	}
 	
 	private SessionStorage storage;
-	private String securityApplication;
+	private Application app;
 	private Random rand = new Random();
 	
 	@Override
@@ -40,7 +42,7 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	public Session create(TCPRemote client) {
 		String sid;
 		try { sid = storage.allocateId(); }
-		catch (Throwable t) {
+		catch (Exception t) {
 			LCCore.getApplication().getDefaultLogger().error("Unable to create session", t);
 			return null;
 		}
@@ -68,7 +70,7 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	public AsyncSupplier<Session, NoException> get(String id, TCPRemote client) {
 		if (id == null) return null;
 		if (id.length() != 3 * 16) {
-			NetworkSecurity.possibleBruteForceAttack(client, securityApplication, "Session", id);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", id);
 			return new AsyncSupplier<>(null, null);
 		}
 		Session session = new Session(id);
@@ -83,15 +85,16 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 				result.unblockSuccess(null);
 				return;
 			}
-			if (loadSession.getResult().booleanValue() == false)
+			if (!loadSession.getResult().booleanValue())
 				result.unblockSuccess(null);
 			else
 				result.unblockSuccess(checkSession(session, client, ts, r, sid));
 		};
 		if (loadSession.isDone()) {
 			check.run();
-		} else
+		} else {
 			loadSession.thenStart(new Task.Cpu.FromRunnable("Check newtork session", Task.PRIORITY_NORMAL, check), true);
+		}
 		return result;
 	}
 	
@@ -99,11 +102,11 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 		if (s == null)
 			return null;
 		if (StringUtil.decodeHexaLong(r) != ((Long)s.getData("_nsrd")).longValue()) {
-			NetworkSecurity.possibleBruteForceAttack(client, securityApplication, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
 			return null;
 		}
 		if (StringUtil.decodeHexaLong(ts) != ((Long)s.getData("_nsts")).longValue()) {
-			NetworkSecurity.possibleBruteForceAttack(client, securityApplication, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
 			return null;
 		}
 		byte[] sip = (byte[])s.getData("_nsip");
@@ -113,7 +116,7 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 		if (!(ip instanceof InetSocketAddress)) return null;
 		byte[] cip = ((InetSocketAddress)ip).getAddress().getAddress();
 		if (!ArrayUtil.equals(sip, cip)) {
-			NetworkSecurity.possibleBruteForceAttack(client, securityApplication, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
 			return null;
 		}
 		return s;

@@ -60,7 +60,7 @@ public class TCPServer implements Closeable {
 		ArrayList<InetSocketAddress> addresses = new ArrayList<>(channels.size());
 		for (ServerChannel channel : channels)
 			try { addresses.add((InetSocketAddress)channel.channel.getLocalAddress()); }
-			catch (Throwable e) { /* ignore */ }
+			catch (Exception e) { /* ignore */ }
 		return addresses;
 	}
 	
@@ -204,10 +204,10 @@ public class TCPServer implements Closeable {
 				manager.getLogger().debug("Client closed: " + ch);
 			if (ch.isOpen())
 				try { ch.close(); }
-				catch (Throwable e) { /* ignore */ }
+				catch (Exception e) { /* ignore */ }
 			for (AutoCloseable c : publicInterface.toClose)
 				try { c.close(); }
-				catch (Throwable e) { /* ignore */ }
+				catch (Exception e) { /* ignore */ }
 			while (!publicInterface.pending.isEmpty()) {
 				IAsync<?> sp = publicInterface.pending.pollFirst();
 				if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
@@ -246,13 +246,10 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public void received(ByteBuffer buffer) {
-			protocol.dataReceivedFromClient(publicInterface, buffer, new Runnable() {
-				@Override
-				public void run() {
-					if (channel == null) return; // already closed
-					synchronized (inputBuffers) {
-						inputBuffers.add(buffer);
-					}
+			protocol.dataReceivedFromClient(publicInterface, buffer, () -> {
+				if (channel == null) return; // already closed
+				synchronized (inputBuffers) {
+					inputBuffers.add(buffer);
 				}
 			});
 		}
@@ -277,9 +274,12 @@ public class TCPServer implements Closeable {
 			if (!waitToSend) {
 				// we can start sending data right away
 				ByteBuffer buffer = null;
-				while (buffer != null || !buffers.isEmpty()) {
-					if (buffer == null)
+				while (true) {
+					if (buffer == null) {
+						if (buffers.isEmpty())
+							break;
 						buffer = buffers.removeFirst();
+					}
 					if (manager.getDataLogger().trace()) {
 						StringBuilder s = new StringBuilder(128 + buffer.remaining() * 5);
 						s.append("Sending ").append(buffer.remaining()).append(" bytes to client:\r\n");

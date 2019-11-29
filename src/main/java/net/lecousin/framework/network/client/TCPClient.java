@@ -51,7 +51,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	protected Async<IOException> spConnect;
 	protected boolean endOfInput = false;
 	private HashMap<String,Object> attributes = new HashMap<>(20);
-	public static SimpleEvent onclosed = new SimpleEvent();
+	private SimpleEvent onclosed = new SimpleEvent();
 	private Supplier<ByteBuffer> dataToSendProvider = null;
 	private Async<IOException> dataToSendSP = null;
 
@@ -265,7 +265,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		 * Receive data until the given byte is read. This can be useful for protocols that have an end of message marker,
 		 * or protocols that send lines of text.
 		 */
-		@SuppressWarnings("resource")
+		@SuppressWarnings("squid:S2095") // ByteArrayIO is returned so do not close it
 		public AsyncSupplier<ByteArrayIO,IOException> readUntil(byte endMarker, int initialBufferSize, int timeout) {
 			AsyncSupplier<ByteArrayIO,IOException> res = new AsyncSupplier<>();
 			ByteArrayIO io = new ByteArrayIO(initialBufferSize, "");
@@ -327,11 +327,11 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 				call(null, data, listener, bufferSize, timeout, keepRemainingData);
 				return;
 			}
-			client.receiveData(bufferSize, timeout).onDone((data) -> {
+			client.receiveData(bufferSize, timeout).onDone(data -> {
 				ByteBuffer rem = remainingRead;
 				remainingRead = null;
 				call(rem, data, listener, bufferSize, timeout, keepRemainingData);
-			}, (error) -> { }, (cancel) -> { });
+			}, error -> { }, cancel -> { });
 		}
 		
 		private void call(
@@ -348,12 +348,13 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 						data.put(remainingData);
 						data.put(newData);
 						data.flip();
-					} else
+					} else {
 						data = remainingData;
+					}
 				}
 				try {
 					listener.accept(data);
-				} catch (Throwable t) {
+				} catch (Exception t) {
 					client.logger.error("Exception thrown by data listener", t);
 					return;
 				}
@@ -361,11 +362,11 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 					remainingRead = data;
 				if (data == null && newData == null)
 					return; // end of data
-				client.receiveData(bufferSize, timeout).onDone((d) -> {
+				client.receiveData(bufferSize, timeout).onDone(d -> {
 					ByteBuffer rem = remainingRead;
 					remainingRead = null;
 					call(rem, d, listener, bufferSize, timeout, keepRemainingData);
-				}, (error) -> { }, (cancel) -> { });
+				}, error -> { }, cancel -> { });
 			}).start();
 		}
 	}
@@ -396,6 +397,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		
 		@Override
 		public void sendTimeout() {
+			// nothing
 		}
 		
 		@Override
@@ -411,10 +413,12 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 							toSend.add(p);
 							dataToSendProvider = null;
 							dataToSendSP = null;
-						} else
+						} else {
 							break;
-					} else
+						}
+					} else {
 						p = toSend.getFirst();
+					}
 				}
 				if (logger.debug())
 					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
@@ -472,13 +476,11 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	public IAsync<IOException> send(ByteBuffer data) {
 		if (logger.debug())
 			logger.debug("Sending data: " + data.remaining());
-		if (manager.getDataLogger().trace()) {
-			if (data.hasArray()) {
-				StringBuilder s = new StringBuilder(data.remaining() * 4);
-				s.append("TCPClient: Data to send to server:\r\n");
-				DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-				manager.getDataLogger().trace(s.toString());
-			}
+		if (data.hasArray() && manager.getDataLogger().trace()) {
+			StringBuilder s = new StringBuilder(data.remaining() * 4);
+			s.append("TCPClient: Data to send to server:\r\n");
+			DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
+			manager.getDataLogger().trace(s.toString());
 		}
 		if (data.remaining() == 0)
 			return new Async<>(true);
@@ -510,7 +512,7 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 		if (closed) return;
 		logger.debug("Close client");
 		try { channel.close(); }
-		catch (Throwable e) { /* ignore */ }
+		catch (Exception e) { /* ignore */ }
 		channelClosed();
 		closed = true;
 	}

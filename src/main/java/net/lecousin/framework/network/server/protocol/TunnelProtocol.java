@@ -6,8 +6,8 @@ import java.nio.channels.ClosedChannelException;
 import java.util.LinkedList;
 
 import net.lecousin.framework.concurrent.Task;
-import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
@@ -33,8 +33,8 @@ public class TunnelProtocol implements ServerProtocol {
 	public void registerClient(TCPServerClient client, TCPClient tunnel) {
 		client.setAttribute(ATTRIBUTE_TUNNEL, tunnel);
 		client.setAttribute(ATTRIBUTE_LAST_SEND, new Async<>(true));
-		client.onclosed(() -> { tunnel.close(); });
-		tunnel.getReceiver().readForEver(bufferSize, -1, (data) -> {
+		client.onclosed(tunnel::close);
+		tunnel.getReceiver().readForEver(bufferSize, -1, data -> {
 			if (data == null) {
 				tunnel.close();
 				client.close();
@@ -49,6 +49,7 @@ public class TunnelProtocol implements ServerProtocol {
 	
 	@Override
 	public void startProtocol(TCPServerClient client) {
+		// nothing to do
 	}
 	
 	@Override

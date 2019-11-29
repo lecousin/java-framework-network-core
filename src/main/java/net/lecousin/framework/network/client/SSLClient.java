@@ -138,8 +138,8 @@ public class SSLClient extends TCPClient {
 		}
 		
 		@Override
-		public void waitForData() {
-			waitForSSLData(8192, 60000); // TODO buffer size ? timeout ?
+		public void waitForData(int expectedBytes, int timeout) {
+			waitForSSLData(expectedBytes, timeout);
 		}
 		
 		@Override
@@ -188,7 +188,7 @@ public class SSLClient extends TCPClient {
 					result.cancel(conn.getCancelEvent());
 					return null;
 				}
-				ssl.startConnection(sslClient, true);
+				ssl.startConnection(sslClient, true, timeout);
 				return null;
 			}
 		}, true);
@@ -200,14 +200,14 @@ public class SSLClient extends TCPClient {
 	 * another TCPClient. This SSLClient will use the SocketChannel of the tunnel, and start the SSL handshake.
 	 * The given synchronization point is unblocked once the SSL handshake is done.
 	 */
-	public void tunnelConnected(TCPClient tunnel, Async<IOException> connection) {
+	public void tunnelConnected(TCPClient tunnel, Async<IOException> connection, int timeout) {
 		setAttribute(CONNECT_ATTRIBUTE, connection);
 		channel = tunnel.channel;
 		closed = false;
 		new Task.Cpu<Void, NoException>("Start SSL protocol for TCPClient through tunnel", Task.PRIORITY_NORMAL) {
 			@Override
 			public Void run() {
-				ssl.startConnection(sslClient, true);
+				ssl.startConnection(sslClient, true, timeout);
 				return null;
 			}
 		}.start();
@@ -277,7 +277,7 @@ public class SSLClient extends TCPClient {
 					close();
 					return null;
 				}
-				ssl.dataReceived(sslClient, b, null);
+				ssl.dataReceived(sslClient, b, null, timeout);
 				return null;
 			}
 		};

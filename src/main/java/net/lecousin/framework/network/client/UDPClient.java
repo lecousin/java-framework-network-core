@@ -9,8 +9,8 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -38,6 +38,7 @@ public class UDPClient implements Closeable {
 		
 		@Override
 		public void sendTimeout() {
+			// nothing
 		}
 		
 		@Override
@@ -97,7 +98,7 @@ public class UDPClient implements Closeable {
 	public synchronized void close() {
 		if (channel != null) {
 			try { channel.close(); }
-			catch (Throwable e) { /* ignore */ }
+			catch (Exception e) { /* ignore */ }
 			channel = null;
 			synchronized (toSend) {
 				Pair<ByteBuffer, Async<IOException>> p;
@@ -139,13 +140,13 @@ public class UDPClient implements Closeable {
 		 * Else it can return the same buffer to continue to fill it, or allocate a new one especially if the
 		 * current buffer is already full. 
 		 */
-		public ByteBuffer dataReceived(ByteBuffer buffer);
+		ByteBuffer dataReceived(ByteBuffer buffer);
 		
 		/** Called if an error occurs while sending the data. */
-		public void error(IOException error);
+		void error(IOException error);
 		
 		/** Called if a timeout occurs. */
-		public void timeout();
+		void timeout();
 	}
 	
 	private class Receiver implements NetworkManager.UDPReceiver {

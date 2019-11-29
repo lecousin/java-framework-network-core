@@ -18,6 +18,7 @@ import net.lecousin.framework.util.StringUtil;
 /**
  * Utility methods for network.
  */
+@SuppressWarnings("squid:S00100") // methods' name
 public final class NetUtil {
 	
 	private NetUtil() { /* no instance */ }
@@ -150,7 +151,7 @@ public final class NetUtil {
 						return (Inet6Address)a;
 				}
 			}
-		} catch (Throwable t) {
+		} catch (Exception t) {
 			// ignore
 		}
 		return null;
@@ -174,7 +175,7 @@ public final class NetUtil {
 				return IPv4ToString(src);
 			}
 			if (src.length == 16) {
-				StringBuffer s = new StringBuffer();
+				StringBuilder s = new StringBuilder();
 				for (int i = 0; i < 16; ++i) {
 					if (i > 0 && (i % 2) == 0) s.append(':');
 					s.append(StringUtil.encodeHexaDigit((src[i] & 0xFF) >> 4));
@@ -186,6 +187,7 @@ public final class NetUtil {
 		}
 
 		@Override
+		@SuppressWarnings("squid:S2692") // indexOf > 0
 		public Object deserialize(Object source, Object containerInstance) {
 			if (source == null) return null;
 			String src = (String)source;

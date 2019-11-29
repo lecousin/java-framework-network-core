@@ -44,13 +44,13 @@ public class UDPServer implements Closeable {
 	/** Interface to implement to handle received messages. */
 	public static interface MessageListener {
 		/** Called each time a new datagram is received on the server. */
-		public void newMessage(ByteBuffer message, SocketAddress source, MessageSender reply);
+		void newMessage(ByteBuffer message, SocketAddress source, MessageSender reply);
 	}
 	
 	/** Interface given to the MessageListener so it can reply to a specific message/client. */
 	public static interface MessageSender {
 		/** Method to call to send a reply to a client. */
-		public void reply(ByteBuffer reply);
+		void reply(ByteBuffer reply);
 	}
 	
 	@Override
@@ -131,15 +131,12 @@ public class UDPServer implements Closeable {
 		@Override
 		public void received(ByteBuffer buffer, SocketAddress source) {
 			if (buffer.hasRemaining())
-				messageListener.newMessage(buffer, source, new MessageSender() {
-					@Override
-					public void reply(ByteBuffer reply) {
-						synchronized (sendQueue) {
-							boolean first = sendQueue.isEmpty();
-							sendQueue.push(new Pair<>(source, reply));
-							if (first)
-								manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
-						}
+				messageListener.newMessage(buffer, source, reply -> {
+					synchronized (sendQueue) {
+						boolean first = sendQueue.isEmpty();
+						sendQueue.push(new Pair<>(source, reply));
+						if (first)
+							manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
 					}
 				});
 			manager.register(channel, SelectionKey.OP_READ, this, 0);

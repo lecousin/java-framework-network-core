@@ -86,8 +86,8 @@ public class SSLServerProtocol implements ServerProtocol {
 		}
 		
 		@Override
-		public void waitForData() throws ClosedChannelException {
-			client.waitForData(60000); // TODO configurable timeout ?
+		public void waitForData(int expectedBytes, int timeout) throws ClosedChannelException {
+			client.waitForData(timeout);
 		}
 		
 		@Override
@@ -127,7 +127,7 @@ public class SSLServerProtocol implements ServerProtocol {
 	public void startProtocol(TCPServerClient client) {
 		Client c = new Client(client);
 		client.setAttribute(ATTRIBUTE_SSL_CLIENT, c);
-		ssl.startConnection(c, false);
+		ssl.startConnection(c, false, 30000);
 	}
 	
 	@Override
@@ -138,7 +138,7 @@ public class SSLServerProtocol implements ServerProtocol {
 	@Override
 	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
 		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
-		ssl.dataReceived(c, data, onbufferavailable);
+		ssl.dataReceived(c, data, onbufferavailable, 30000);
 	}
 	
 	@Override

@@ -1,24 +1,23 @@
 package net.lecousin.framework.network.security;
 
-import java.io.Closeable;
 import java.io.File;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 import net.lecousin.framework.application.Application;
-import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
-import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.FileIO;
 import net.lecousin.framework.io.serialization.SerializationException;
 import net.lecousin.framework.io.serialization.TypeDefinition;
-import net.lecousin.framework.network.TCPRemote;
+import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.plugins.ExtensionPoints;
 import net.lecousin.framework.xml.serialization.XMLDeserializer;
 import net.lecousin.framework.xml.serialization.XMLSerializer;
 
@@ -26,194 +25,126 @@ import net.lecousin.framework.xml.serialization.XMLSerializer;
  * Utility to manage security.
  */
 public class NetworkSecurity {
-
-	/** Configuration. */
-	public static class Config {
-		
-		public IPBlackList.Config ipBlackList;
-		public BruteForceAttempt.Config bruteForceAttempt;
-		
-		/** Constructor. */
-		public Config() {}
-		
-		private Config(Mapping m) {
-			ipBlackList = new IPBlackList.Config(m.ipBlackList);
-			bruteForceAttempt = new BruteForceAttempt.Config(m.bruteForceAttempt);
+	
+	/** Get the instance for the given application. */
+	public static NetworkSecurity get(Application app) {
+		NetworkSecurity instance = app.getInstance(NetworkSecurity.class);
+		if (instance == null) {
+			instance = new NetworkSecurity(app);
+			app.setInstance(NetworkSecurity.class, instance);
 		}
-		
-	}
-
-	private static class Mapping {
-		
-		public IPBlackList.Mapping ipBlackList;
-		public BruteForceAttempt.Mapping bruteForceAttempt;
-		
-		public Mapping(Config cfg) {
-			ipBlackList = new IPBlackList.Mapping(cfg != null ? cfg.ipBlackList : null);
-			bruteForceAttempt = new BruteForceAttempt.Mapping(cfg != null ? cfg.bruteForceAttempt : null);
-		}
-		
+		return instance;
 	}
 	
-	private static final String INIT_DATA_NAME = "net.lecousin.framework.network.security.init";
+	private File appCfgDir;
+	private Logger logger;
+	private JoinPoint<NoException> loaded = new JoinPoint<>();
+	private Map<NetworkSecurityPlugin, NetworkSecurityFeature> plugins = new HashMap<>();
+	private Map<Class<?>, NetworkSecurityFeature> instances = new HashMap<>();
 	
-	/** Initialize an instance for the current application. */
-	@SuppressWarnings({ "resource", "unchecked" })
-	public static void init() {
-		net.lecousin.framework.application.Application app = LCCore.getApplication();
-		Async<NoException> init;
-		boolean existingInit = false;
-		synchronized (NetworkSecurity.class) {
-			init = (Async<NoException>)app.getData(INIT_DATA_NAME);
-			if (init == null) {
-				init = new Async<>();
-				app.setData(INIT_DATA_NAME, init);
-			} else
-				existingInit = true;
-		}
-		if (existingInit) {
-			init.block(0);
-			return;
-		}
-		NetworkSecurity sec = new NetworkSecurity();
-		app.setInstance(NetworkSecurity.class, sec);
-		File file = new File(app.getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
-		if (!file.exists())
-			if (!file.mkdirs()) {
-				System.err.println("Unable to create directory " + file.getAbsolutePath());
-			}
-		file = new File(file, "net.lecousin.framework.network.security.xml");
-		Config config = null;
-		if (file.exists()) {
-			try (FileIO.ReadOnly input = new FileIO.ReadOnly(file, Task.PRIORITY_IMPORTANT)) {
+	private NetworkSecurity(Application app) {
+		load(app);
+	}
+	
+	private void load(Application app) {
+		logger = app.getLoggerFactory().getLogger(NetworkSecurity.class);
+		appCfgDir = new File(app.getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
+		if (!appCfgDir.exists() && !appCfgDir.mkdirs())
+			logger.error("Unable to create directory " + appCfgDir.getAbsolutePath());
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
+			if (cfgFile.exists()) {
+				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.PRIORITY_IMPORTANT);
 				AsyncSupplier<Object, SerializationException> res =
-					new XMLDeserializer(null, "Security").deserialize(
-						new TypeDefinition(Config.class), input, new ArrayList<>(0));
-				config = (Config)res.blockResult(0);
-			} catch (Throwable t) {
-				System.err.println("Error reading configuration file " + file.getAbsolutePath() + ": " + t.getMessage());
-				t.printStackTrace(System.err);
+					new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
+						new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+				loaded.addToJoin(1);
+				res.onDone(cfg -> {
+					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
+					instances.put(instance.getClass(), instance);
+					plugins.put(plugin, instance);
+					loaded.joined();
+				}, err -> {
+					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
+					NetworkSecurityFeature instance = plugin.newInstance(app, null);
+					instances.put(instance.getClass(), instance);
+					plugins.put(plugin, instance);
+					loaded.joined();
+				}, cancel -> loaded.joined());
+				input.closeAfter(res);
+			} else {
+				NetworkSecurityFeature instance = plugin.newInstance(app, null);
+				instances.put(instance.getClass(), instance);
+				plugins.put(plugin, instance);
 			}
 		}
-		sec.mapping = new Mapping(config);
-		config = null;
-		sec.cleaning();
+		clean();
 
-		sec.taskSave = new Task.Cpu<Void,NoException>("Save network security", Task.PRIORITY_LOW) {
-			@Override
-			public Void run() {
-				if (!updated) return null;
-				sec.save();
-				return null;
-			}
-		};
-		sec.taskSave.executeEvery(2 * 60 * 1000, 30 * 1000);
-		sec.taskSave.start();
-		sec.taskClean = new Task.Cpu<Void,NoException>("Cleaning network security", Task.PRIORITY_LOW) {
-			@Override
-			public Void run() {
-				sec.cleaning();
-				return null;
-			}
-		};
-		sec.taskClean.executeEvery(5 * 60 * 1000, 10 * 60 * 1000);
-		sec.taskClean.start();
+		Task<Void, NoException> taskSave = new Task.Cpu.FromRunnable("Save network security", Task.PRIORITY_LOW, this::save);
+		taskSave.executeEvery(2L * 60 * 1000, 30L * 1000);
+		taskSave.start();
 		
-		app.toClose(new Closeable() {
-			@Override
-			public void close() {
-				sec.cleaning();
-				if (updated)
-					sec.save();
-				sec.taskSave.cancel(new CancelException("Application stopping"));
-				sec.taskClean.cancel(new CancelException("Application stopping"));
-			}
+		Task<Void, NoException> taskClean = new Task.Cpu.FromRunnable("Cleaning network security", Task.PRIORITY_LOW, this::clean);
+		taskClean.executeEvery(5L * 60 * 1000, 10L * 60 * 1000);
+		taskClean.start();
+		
+		app.toClose(() -> {
+			taskSave.cancel(new CancelException("Application stopping"));
+			taskClean.cancel(new CancelException("Application stopping"));
+			clean();
+			save().block(0);
 		});
-		init.unblock();
+		loaded.start();
 	}
 	
-	
-	private Mapping mapping;
-	static boolean updated = false;
-	
-	private Task.Cpu<Void,NoException> taskSave;
-	private Task.Cpu<Void,NoException> taskClean;
-	
-	private void save() {
-		File file = new File(LCCore.getApplication().getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
-		if (!file.exists())
-			if (!file.mkdirs()) {
-				System.err.println("Unable to create directory " + file.getAbsolutePath());
-			}
-		file = new File(file, "net.lecousin.framework.network.security.xml");
-		synchronized (mapping.ipBlackList) {
-			synchronized (mapping.bruteForceAttempt) {
-				Config cfg = new Config(mapping);
-				if (file.exists())
-					if (!file.delete()) {
-						System.err.println("Unable to remove previous file " + file.getAbsolutePath());
-					}
-				try (FileIO.WriteOnly output = new FileIO.WriteOnly(file, Task.PRIORITY_IMPORTANT)) {
-					IAsync<SerializationException> ser =
-						new XMLSerializer(null, "Security", null, StandardCharsets.UTF_8, 4096, true)
-							.serialize(cfg, new TypeDefinition(Config.class), output, new ArrayList<>(0));
-					ser.blockThrow(0);
-					updated = false;
-				} catch (Throwable t) {
-					// TODO logger
-					System.err.println("Error writing configuration file " + file.getAbsolutePath() + ": " + t.getMessage());
-					t.printStackTrace(System.err);
-					if (!file.delete())
-						System.err.println("Unable to remove configuration file that may be corrupted: "
-							+ file.getAbsolutePath());
-				}
-			}
-		}
+	public IAsync<NoException> isLoaded() {
+		return loaded;
 	}
 	
-	/** Return the instance for the current application. */
+	/** Return the requested feature. */
 	@SuppressWarnings("unchecked")
-	public static NetworkSecurity get() {
-		Application app = LCCore.getApplication();
-		Async<NoException> init = (Async<NoException>)app.getData(INIT_DATA_NAME);
-		if (init == null) {
-			init();
-			init = (Async<NoException>)app.getData(INIT_DATA_NAME);
+	public <T extends NetworkSecurityFeature> T getFeature(Class<T> clazz) {
+		return (T)instances.get(clazz);
+	}
+	
+	private JoinPoint<NoException> save() {
+		JoinPoint<NoException> jp = new JoinPoint<>();
+		if (!appCfgDir.exists()) {
+			jp.start();
+			return jp;
 		}
-		init.block(0);
-		return app.getInstance(NetworkSecurity.class);
+
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			NetworkSecurityFeature instance = plugins.get(plugin);
+			Object cfg = instance.getConfigurationIfChanged();
+			if (cfg == null)
+				continue;
+			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
+			if (cfgFile.exists() && !cfgFile.delete()) {
+				logger.error("Unable to delete configuration file " + cfgFile.getAbsolutePath());
+				continue;
+			}
+			FileIO.WriteOnly output = new FileIO.WriteOnly(cfgFile, Task.PRIORITY_IMPORTANT);
+			IAsync<SerializationException> ser =
+				new XMLSerializer(null, plugin.getClass().getSimpleName(), null, StandardCharsets.UTF_8, 4096, true)
+					.serialize(cfg, new TypeDefinition(plugin.getConfigurationClass()), output, new ArrayList<>(0));
+			jp.addToJoin(1);
+			ser.onDone(jp::joined, err -> {
+				logger.error("Error saving configuration file " + cfgFile.getAbsolutePath(), err);
+				jp.joined();
+			}, cancel -> jp.joined());
+			output.closeAfter(ser);
+		}
+
+		jp.start();
+		return jp;
 	}
 	
-	/** Return true if the given address is not black listed. */
-	public static boolean acceptAddress(InetAddress address) {
-		return get().mapping.ipBlackList.acceptAddress(address);
-	}
-	
-	/** Add the given address to the black list for the given amount of milliseconds. */
-	public static void blacklist(String category, InetAddress address, long delay) {
-		get().mapping.ipBlackList.blacklist(category, address, delay);
-	}
-	
-	/** Remove the given address to the black list. */
-	public static void unblacklist(String category, InetAddress address) {
-		get().mapping.ipBlackList.unblacklist(category, address);
-	}
-	
-	/** Register a wrong password as a possible brute force attack. */
-	public static void possibleBruteForceAttack(TCPRemote client, String application, String functionality, String value) {
-		try {
-			possibleBruteForceAttack(((InetSocketAddress)client.getRemoteAddress()).getAddress(), application, functionality, value);
-		} catch (Throwable e) { /* ignore */ }
-	}
-	
-	/** Register a wrong password as a possible brute force attack. */
-	public static void possibleBruteForceAttack(InetAddress address, String application, String functionality, String value) {
-		get().mapping.bruteForceAttempt.attempt(address, application, functionality, value);
-	}
-	
-	private void cleaning() {
-		mapping.ipBlackList.clean();
-		mapping.bruteForceAttempt.clean();
+	private void clean() {
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			NetworkSecurityFeature instance = plugins.get(plugin);
+			instance.clean();
+		}
 	}
 	
 }

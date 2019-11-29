@@ -5,8 +5,8 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.function.Supplier;
 
-import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.IAsync;
 
 /** Base interface for a TCP connection with a remote end-point. */
 public interface TCPRemote {

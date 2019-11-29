@@ -27,6 +27,7 @@ import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.network.security.IPBlackList;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.util.DebugUtil;
 
@@ -43,7 +44,7 @@ public class NetworkManager implements Closeable {
 	 */
 	public static interface Listener {
 		/** Called when the associated channel has been closed. */
-		public void channelClosed();
+		void channelClosed();
 	}
 
 	/**
@@ -51,10 +52,10 @@ public class NetworkManager implements Closeable {
 	 */
 	public static interface Server extends Listener {
 		/** Called when a new client is connected. */
-		public void newClient(SocketChannel client);
+		void newClient(SocketChannel client);
 		
 		/** Called when an error occurs while accepting clients. */
-		public void acceptError(IOException error);
+		void acceptError(IOException error);
 	}
 
 	/**
@@ -62,10 +63,10 @@ public class NetworkManager implements Closeable {
 	 */
 	public static interface Client extends Listener {
 		/** Called once the client has been connected to the server. */
-		public void connected();
+		void connected();
 		
 		/** Called when an error occurs while connecting to a server. */
-		public void connectionFailed(IOException error);
+		void connectionFailed(IOException error);
 	}
 	
 	/**
@@ -76,25 +77,25 @@ public class NetworkManager implements Closeable {
 		 * This allows to allocate an amount of bytes according to what is expected.
 		 * Because it is directly called by the NetworkManager's thread, it must be as fast as possible.
 		 */
-		public ByteBuffer allocateReceiveBuffer();
+		ByteBuffer allocateReceiveBuffer();
 		
 		/** Called when an error occurs while receiving data. The buffer may be null in case of timeout. */
-		public void receiveError(IOException error, ByteBuffer buffer);
+		void receiveError(IOException error, ByteBuffer buffer);
 	}
 	
 	/** TCP receiver. */
 	public static interface TCPReceiver extends Receiver {
 		/** Called when some data has been received. */
-		public void received(ByteBuffer buffer);
+		void received(ByteBuffer buffer);
 		
 		/** Called when no more data can be received. */
-		public void endOfInput(ByteBuffer buffer);
+		void endOfInput(ByteBuffer buffer);
 	}
 	
 	/** UDP receiver. */
 	public static interface UDPReceiver extends Receiver {
 		/** Called when data has been received. */
-		public void received(ByteBuffer buffer, SocketAddress source);
+		void received(ByteBuffer buffer, SocketAddress source);
 	}
 
 	/**
@@ -102,14 +103,15 @@ public class NetworkManager implements Closeable {
 	 */
 	public static interface Sender extends Listener {
 		/** Called when the associated network channel is ready to send data over the network. */
-		public void readyToSend();
+		void readyToSend();
 		
 		/** Called if a timeout was specified when registering, and the channel is not yet ready to send
 		 * data after the specified timeout.
 		 */
-		public void sendTimeout();
+		void sendTimeout();
 	}
-	
+
+	@SuppressWarnings("squid:S00112") // use of RUntimeException
 	private NetworkManager(Application app) {
 		logger = app.getLoggerFactory().getLogger("network");
 		dataLogger = app.getLoggerFactory().getLogger("network-data");
@@ -119,9 +121,12 @@ public class NetworkManager implements Closeable {
 		} catch (IOException e) {
 			throw new RuntimeException("Unable to start Network Manager", e);
 		}
-		worker = app.getThreadFactory().newThread(new WorkerLoop());
-		worker.setName("Network Manager");
-		worker.start();
+		NetworkSecurity security = NetworkSecurity.get(app);
+		security.isLoaded().onDone(() -> {
+			worker = app.getThreadFactory().newThread(new WorkerLoop(security.getFeature(IPBlackList.class)));
+			worker.setName("Network Manager");
+			worker.start();
+		});
 	}
 	
 	/** Get the instance for the current application. */
@@ -235,26 +240,14 @@ public class NetworkManager implements Closeable {
 			logger.error("Null channel given to NetworkManager.register", new Exception());
 			return new AsyncSupplier<>(null, new IOException("Cannot register a null channel"));
 		}
-		if ((ops & SelectionKey.OP_ACCEPT) != 0)
-			if (!(listener instanceof Server)) {
-				logger.error("Invalid listener for ACCEPT: " + listener.getClass().getName(), new Exception());
-				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
-			}
-		if ((ops & SelectionKey.OP_CONNECT) != 0)
-			if (!(listener instanceof Client)) {
-				logger.error("Invalid listener for CONNECT: " + listener.getClass().getName(), new Exception());
-				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
-			}
-		if ((ops & SelectionKey.OP_READ) != 0)
-			if (!(listener instanceof Receiver)) {
-				logger.error("Invalid listener for READ: " + listener.getClass().getName(), new Exception());
-				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
-			}
-		if ((ops & SelectionKey.OP_WRITE) != 0)
-			if (!(listener instanceof Sender)) {
-				logger.error("Invalid listener for WRITE: " + listener.getClass().getName(), new Exception());
-				return new AsyncSupplier<>(null, new IOException("Invalid listener"));
-			}
+		if ((ops & SelectionKey.OP_ACCEPT) != 0 && !(listener instanceof Server))
+			return invalidListener(listener, "ACCEPT");
+		if ((ops & SelectionKey.OP_CONNECT) != 0 && !(listener instanceof Client))
+			return invalidListener(listener, "CONNECT");
+		if ((ops & SelectionKey.OP_READ) != 0 && !(listener instanceof Receiver))
+			return invalidListener(listener, "READ");
+		if ((ops & SelectionKey.OP_WRITE) != 0 && !(listener instanceof Sender))
+			return invalidListener(listener, "WRITE");
 		RegisterRequest req = new RegisterRequest();
 		req.channel = channel;
 		req.newOps = ops;
@@ -270,15 +263,25 @@ public class NetworkManager implements Closeable {
 		return req.result;
 	}
 	
+	private AsyncSupplier<SelectionKey, IOException> invalidListener(Listener listener, String opName) {
+		IOException error = new IOException("Invalid listener for " + opName + ": " + listener.getClass().getName());
+		logger.error(error.getMessage(), error);
+		return new AsyncSupplier<>(null, error);
+	}
+	
 	private class WorkerLoop implements Runnable {
+		
+		private WorkerLoop(IPBlackList blacklist) {
+			this.blacklist = blacklist;
+		}
 
 		private long workingTime = 0;
 		private long waitingTime = 0;
+		private IPBlackList blacklist;
 		
 		@Override
 		public void run() {
 			long start = System.nanoTime();
-			NetworkSecurity.init();
 			int loopCount = 0;
 			while (!stop) {
 				processRegisterRequests();
@@ -301,10 +304,9 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 							Server server = listeners.onAccept;
 							try {
-								@SuppressWarnings("resource")
 								SocketChannel client = ((ServerSocketChannel)key.channel()).accept();
 								acceptClient(server, client);
-							} catch (Throwable e) {
+							} catch (Exception e) {
 								acceptError(server, e);
 							}
 						}
@@ -318,7 +320,7 @@ public class NetworkManager implements Closeable {
 								key.interestOps(0);
 								listeners.reset();
 								connected(client);
-							} catch (Throwable e) {
+							} catch (Exception e) {
 								if (logger.info())
 									logger.info("Connection failed: " + key.channel().toString());
 								key.cancel();
@@ -366,17 +368,17 @@ public class NetworkManager implements Closeable {
 										/* ignore */
 									}
 								}
-							} catch (Throwable e) {
+							} catch (Exception e) {
 								if (logger.error() && !(e instanceof IOException))
 									logger.error("Error while receiving data from network on "
 										+ key.channel().toString(), e);
 								receiveError(receiver, e, buffer);
 								try { key.interestOps(0); }
 								catch (CancelledKeyException e2) { /* ignore */ }
-								catch (Throwable t) { logger.error("Error", t); }
+								catch (Exception t) { logger.error("Error", t); }
 								listeners.reset();
 								try { key.channel().close(); }
-								catch (Throwable t) { /* ignore */ }
+								catch (Exception t) { /* ignore */ }
 								channelClosed(receiver);
 							}
 						}
@@ -392,7 +394,7 @@ public class NetworkManager implements Closeable {
 								readyToSend(sender);
 							} catch (CancelledKeyException e) {
 								channelClosed(sender);
-							} catch (Throwable t) {
+							} catch (Exception t) {
 								if (logger.error())
 									logger.error("Error with channel ready to send", t);
 							}
@@ -417,8 +419,9 @@ public class NetworkManager implements Closeable {
 						long ms = nextTimeout - System.currentTimeMillis();
 						if (ms <= 0) ms = 1;
 						selector.select(ms);
-					} else
+					} else {
 						selector.select();
+					}
 				} catch (IOException e) {
 					if (logger.error()) logger.error("Error selecting channels", e);
 					break;
@@ -429,244 +432,253 @@ public class NetworkManager implements Closeable {
 				waitingTime += start - now;
 			}
 			try { selector.close(); }
-			catch (Throwable e) { /* ignore */ }
+			catch (Exception e) { /* ignore */ }
 			if (logger.info())
 				logger.info("Network Manager closed, worked during "
-					+ String.format("%.5f", new Double(workingTime * 1.d / 1000000000))
-					+ "s., waited " + String.format("%.5f", new Double(waitingTime * 1.d / 1000000000)) + "s.");
+					+ String.format("%.5f", Double.valueOf(workingTime * 1.d / 1000000000))
+					+ "s., waited " + String.format("%.5f", Double.valueOf(waitingTime * 1.d / 1000000000)) + "s.");
 		}
-	}
 	
-	private void processRegisterRequests() {
-		do {
-			RegisterRequest req;
-			synchronized (requests) {
-				req = requests.pollFirst();
-			}
-			if (req == null) break;
-			try {
-				SelectionKey key = req.channel.keyFor(selector);
-				if (key == null) {
-					Attachment listeners = new Attachment();
-					listeners.set(req.newOps, req.listener, req.timeout);
-					key = req.channel.register(selector, req.newOps, listeners);
-					if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
-					req.result.unblockSuccess(key);
-					continue;
+		private void processRegisterRequests() {
+			do {
+				RegisterRequest req;
+				synchronized (requests) {
+					req = requests.pollFirst();
 				}
-				Attachment listeners = (Attachment)key.attachment();
+				if (req == null) break;
 				try {
-					int curOps = key.interestOps();
-					int conflict = curOps & req.newOps;
-					if (conflict == 0) {
-						key.interestOps(curOps | req.newOps);
-						listeners.set(req.newOps, req.listener, req.timeout);
-						if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
-						req.result.unblockSuccess(key);
+					processRegisterRequest(req);
+				} catch (ClosedChannelException e) {
+					if (logger.info()) logger.info("Channel closed while registering " + req.channel
+						+ " for operations " + req.newOps);
+					if (req.listener != null)
+						channelClosed(req.listener);
+					req.result.error(e);
+				}
+			} while (!stop);
+		}
+		
+		private void processRegisterRequest(RegisterRequest req) throws ClosedChannelException {
+			SelectionKey key = req.channel.keyFor(selector);
+			if (key == null) {
+				Attachment listeners = new Attachment();
+				listeners.set(req.newOps, req.listener, req.timeout);
+				key = req.channel.register(selector, req.newOps, listeners);
+				if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
+				req.result.unblockSuccess(key);
+				return;
+			}
+			Attachment listeners = (Attachment)key.attachment();
+			try {
+				int curOps = key.interestOps();
+				int conflict = curOps & req.newOps;
+				if (conflict == 0) {
+					key.interestOps(curOps | req.newOps);
+					listeners.set(req.newOps, req.listener, req.timeout);
+					if (logger.trace())
+						logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
+					req.result.unblockSuccess(key);
+					return;
+				}
+				if (logger.error()) logger.error("Operation " + req.newOps + " already registered on " + req.channel);
+				req.result.unblockError(new IOException("Operation already registered"));
+				try {
+					if ((conflict & SelectionKey.OP_ACCEPT) != 0)
+						acceptError((Server)req.listener,
+							new IOException("Already registered for accept operation"));
+					if ((conflict & SelectionKey.OP_CONNECT) != 0)
+						connectionFailed((Client)req.listener,
+							new IOException("Already registered for connect operation"));
+					if ((conflict & SelectionKey.OP_READ) != 0)
+						receiveError((Receiver)req.listener,
+							new IOException("Already registered for read operation"), null);
+					if ((conflict & SelectionKey.OP_WRITE) != 0)
+						logger.error("Already registered for write operation",
+							new IOException("Already registered for write operation"));
+				} catch (Exception t) {
+					logger.error("Error calling listener", t);
+				}
+			} catch (CancelledKeyException e) {
+				if (logger.info()) logger.info("Cancelled key while registering " + req.channel
+					+ " for operations " + req.newOps);
+				listeners.channelClosed();
+				req.result.error(IO.error(e));
+			}
+		}
+		
+		private long checkTimeouts() {
+			long now = System.currentTimeMillis();
+			long nextTimeout = 0;
+			for (SelectionKey key : selector.keys()) {
+				if (!key.isValid()) continue;
+				Attachment listeners = (Attachment)key.attachment();
+				if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
+					if (now > listeners.connectStart + listeners.onConnectTimeout) {
+						connectionFailed(listeners.onConnect,
+							new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
+						key.cancel();
 						continue;
 					}
-					if (logger.error()) logger.error("Operation " + req.newOps + " already registered on " + req.channel);
-					req.result.unblockError(new IOException("Operation already registered"));
-					try {
-						if ((conflict & SelectionKey.OP_ACCEPT) != 0)
-							acceptError((Server)req.listener, new IOException("Already registered for accept operation"));
-						if ((conflict & SelectionKey.OP_CONNECT) != 0)
-							connectionFailed((Client)req.listener,
-								new IOException("Already registered for connect operation"));
-						if ((conflict & SelectionKey.OP_READ) != 0)
-							receiveError((Receiver)req.listener,
-								new IOException("Already registered for read operation"), null);
-						if ((conflict & SelectionKey.OP_WRITE) != 0)
-							logger.error("Already registered for write operation",
-								new IOException("Already registered for write operation"));
-					} catch (Throwable t) {
-						logger.error("Error calling listener", t);
+					if (listeners.connectStart + listeners.onConnectTimeout > nextTimeout)
+						nextTimeout = listeners.connectStart + listeners.onConnectTimeout;
+				}
+				if (listeners.onRead != null && listeners.onReadTimeout > 0) {
+					if (now > listeners.readStart + listeners.onReadTimeout) {
+						receiveError(listeners.onRead,
+							new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
+						try { key.interestOps(0); }
+						catch (CancelledKeyException e2) { /* ignore */ }
+						catch (Exception t) { logger.error("Error", t); }
+						listeners.reset();
+						try { key.channel().close(); }
+						catch (Exception t) { /* ignore */ }
+						continue;
 					}
-				} catch (CancelledKeyException e) {
-					if (logger.info())
-						logger.info("Cancelled key while registering " + req.channel + " for operations " + req.newOps);
-					listeners.channelClosed();
-					req.result.error(IO.error(e));
+					if (listeners.readStart + listeners.onReadTimeout > nextTimeout)
+						nextTimeout = listeners.readStart + listeners.onReadTimeout;
 				}
-			} catch (ClosedChannelException e) {
-				if (logger.info()) logger.info("Channel closed while registering " + req.channel + " for operations " + req.newOps);
-				if (req.listener != null)
-					channelClosed(req.listener);
-				req.result.error(e);
-			}
-		} while (!stop);
-	}
-	
-	private long checkTimeouts() {
-		long now = System.currentTimeMillis();
-		long nextTimeout = 0;
-		for (SelectionKey key : selector.keys()) {
-			if (!key.isValid()) continue;
-			Attachment listeners = (Attachment)key.attachment();
-			if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
-				if (now > listeners.connectStart + listeners.onConnectTimeout) {
-					connectionFailed(listeners.onConnect,
-						new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
-					key.cancel();
-					continue;
+				if (listeners.onWrite != null && listeners.onWriteTimeout > 0) {
+					if (now > listeners.writeStart + listeners.onWriteTimeout) {
+						int iops = key.interestOps();
+						key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
+						Sender sender = listeners.onWrite;
+						listeners.onWrite = null;
+						listeners.onWriteTimeout = 0;
+						sendTimeout(sender);
+						continue;
+					}
+					if (listeners.writeStart + listeners.onWriteTimeout > nextTimeout)
+						nextTimeout = listeners.writeStart + listeners.onWriteTimeout;
 				}
-				if (listeners.connectStart + listeners.onConnectTimeout > nextTimeout)
-					nextTimeout = listeners.connectStart + listeners.onConnectTimeout;
 			}
-			if (listeners.onRead != null && listeners.onReadTimeout > 0) {
-				if (now > listeners.readStart + listeners.onReadTimeout) {
-					receiveError(listeners.onRead,
-						new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
-					try { key.interestOps(0); }
-					catch (CancelledKeyException e2) { /* ignore */ }
-					catch (Throwable t) { logger.error("Error", t); }
-					listeners.reset();
-					try { key.channel().close(); }
-					catch (Throwable t) { /* ignore */ }
-					continue;
-				}
-				if (listeners.readStart + listeners.onReadTimeout > nextTimeout)
-					nextTimeout = listeners.readStart + listeners.onReadTimeout;
-			}
-			if (listeners.onWrite != null && listeners.onWriteTimeout > 0) {
-				if (now > listeners.writeStart + listeners.onWriteTimeout) {
-					int iops = key.interestOps();
-					key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
-					Sender sender = listeners.onWrite;
-					listeners.onWrite = null;
-					listeners.onWriteTimeout = 0;
-					sendTimeout(sender);
-					continue;
-				}
-				if (listeners.writeStart + listeners.onWriteTimeout > nextTimeout)
-					nextTimeout = listeners.writeStart + listeners.onWriteTimeout;
-			}
+			return nextTimeout;
 		}
-		return nextTimeout;
-	}
-	
-	private void acceptClient(Server server, SocketChannel client) {
-		new Task.Cpu<Void, NoException>("Accept network client", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				try {
-					InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
-					if (!NetworkSecurity.acceptAddress(addr.getAddress())) {
-						if (logger.debug())
-							logger.debug("Client rejected: " + addr);
-						client.close();
-					} else {
-						if (logger.debug())
-							logger.debug("New client connected: " + client.toString());
-						client.configureBlocking(false);
-						server.newClient(client);
+		
+		private void acceptClient(Server server, SocketChannel client) {
+			new Task.Cpu<Void, NoException>("Accept network client", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					try {
+						InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
+						if (!blacklist.acceptAddress(addr.getAddress())) {
+							if (logger.debug())
+								logger.debug("Client rejected: " + addr);
+							client.close();
+						} else {
+							if (logger.debug())
+								logger.debug("New client connected: " + client.toString());
+							client.configureBlocking(false);
+							server.newClient(client);
+						}
+					} catch (Exception e) {
+						server.acceptError(IO.error(e));
 					}
-				} catch (Throwable e) {
-					server.acceptError(IO.error(e));
+					return null;
 				}
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void acceptError(Server server, Throwable error) {
-		new Task.Cpu<Void, NoException>("Call Server.acceptError", Task.PRIORITY_RATHER_LOW) {
-			@Override
-			public Void run() {
-				server.acceptError(IO.error(error));
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void connected(Client client) {
-		new Task.Cpu<Void, NoException>("Call Client.connected", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				client.connected();
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void connectionFailed(Client client, Throwable error) {
-		new Task.Cpu<Void, NoException>("Call Client.connectionFailed", Task.PRIORITY_RATHER_LOW) {
-			@Override
-			public Void run() {
-				client.connectionFailed(IO.error(error));
-				return null;
-			}
-		}.start();
-	}
-	
-	private void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
-		new Task.Cpu<Void, NoException>("Call TCPReceiver.received", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				buffer.flip();
-				if (dataLogger.trace()) {
-					StringBuilder s = new StringBuilder(nb * 5 + 256);
-					s.append(nb).append(" bytes received on ");
-					s.append(channel.toString());
-					s.append("\r\n");
-					DebugUtil.dumpHex(s, buffer);
-					dataLogger.trace(s.toString());
+			}.start();
+		}
+		
+		
+		private void acceptError(Server server, Throwable error) {
+			new Task.Cpu<Void, NoException>("Call Server.acceptError", Task.PRIORITY_RATHER_LOW) {
+				@Override
+				public Void run() {
+					server.acceptError(IO.error(error));
+					return null;
 				}
-				receiver.received(buffer);
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void dataReceived(UDPReceiver receiver, ByteBuffer buffer, SocketAddress source) {
-		new Task.Cpu<Void, NoException>("Call UDPReceiver.received", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				buffer.flip();
-				receiver.received(buffer, source);
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void endOfInput(TCPReceiver receiver, ByteBuffer buffer) {
-		new Task.Cpu<Void, NoException>("Call TCPReceiver.endOfInput", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				receiver.endOfInput(buffer);
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void receiveError(Receiver client, Throwable error, ByteBuffer buffer) {
-		new Task.Cpu<Void, NoException>("Call Receiver.receiveError", Task.PRIORITY_RATHER_LOW) {
-			@Override
-			public Void run() {
-				client.receiveError(IO.error(error), buffer);
-				return null;
-			}
-		}.start();
-	}
+			}.start();
+		}
+		
+		private void connected(Client client) {
+			new Task.Cpu<Void, NoException>("Call Client.connected", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					client.connected();
+					return null;
+				}
+			}.start();
+		}
+		
+		private void connectionFailed(Client client, Throwable error) {
+			new Task.Cpu<Void, NoException>("Call Client.connectionFailed", Task.PRIORITY_RATHER_LOW) {
+				@Override
+				public Void run() {
+					client.connectionFailed(IO.error(error));
+					return null;
+				}
+			}.start();
+		}
+		
+		private void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
+			new Task.Cpu<Void, NoException>("Call TCPReceiver.received", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					buffer.flip();
+					if (dataLogger.trace()) {
+						StringBuilder s = new StringBuilder(nb * 5 + 256);
+						s.append(nb).append(" bytes received on ");
+						s.append(channel.toString());
+						s.append("\r\n");
+						DebugUtil.dumpHex(s, buffer);
+						dataLogger.trace(s.toString());
+					}
+					receiver.received(buffer);
+					return null;
+				}
+			}.start();
+		}
+		
+		private void dataReceived(UDPReceiver receiver, ByteBuffer buffer, SocketAddress source) {
+			new Task.Cpu<Void, NoException>("Call UDPReceiver.received", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					buffer.flip();
+					receiver.received(buffer, source);
+					return null;
+				}
+			}.start();
+		}
+		
+		private void endOfInput(TCPReceiver receiver, ByteBuffer buffer) {
+			new Task.Cpu<Void, NoException>("Call TCPReceiver.endOfInput", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					receiver.endOfInput(buffer);
+					return null;
+				}
+			}.start();
+		}
+		
+		private void receiveError(Receiver client, Throwable error, ByteBuffer buffer) {
+			new Task.Cpu<Void, NoException>("Call Receiver.receiveError", Task.PRIORITY_RATHER_LOW) {
+				@Override
+				public Void run() {
+					client.receiveError(IO.error(error), buffer);
+					return null;
+				}
+			}.start();
+		}
 
-	private static void readyToSend(Sender sender) {
-		new Task.Cpu<Void, NoException>("Call Sender.readyToSend", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				sender.readyToSend();
-				return null;
-			}
-		}.start();
-	}
-	
-	private static void sendTimeout(Sender sender) {
-		new Task.Cpu<Void, NoException>("Call Sender.sendTimeout", Task.PRIORITY_RATHER_LOW) {
-			@Override
-			public Void run() {
-				sender.sendTimeout();
-				return null;
-			}
-		}.start();
+		private void readyToSend(Sender sender) {
+			new Task.Cpu<Void, NoException>("Call Sender.readyToSend", Task.PRIORITY_NORMAL) {
+				@Override
+				public Void run() {
+					sender.readyToSend();
+					return null;
+				}
+			}.start();
+		}
+		
+		private void sendTimeout(Sender sender) {
+			new Task.Cpu<Void, NoException>("Call Sender.sendTimeout", Task.PRIORITY_RATHER_LOW) {
+				@Override
+				public Void run() {
+					sender.sendTimeout();
+					return null;
+				}
+			}.start();
+		}
+
 	}
 	
 	private static void channelClosed(Listener listener) {

@@ -10,9 +10,9 @@ import java.util.Map;
 import java.util.Set;
 
 import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
-import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.encoding.HexaDecimalEncoder;
 import net.lecousin.framework.memory.IMemoryManageable;
@@ -38,9 +38,8 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 		this.idManager = idManager;
 		this.expiration = expiration;
 		if (expiration > 0) {
-			checkExpirationTask = new Task.Cpu.FromRunnable("Check expired sessions", Task.PRIORITY_LOW, () -> {
-				checkExpiredSessions();
-			}).executeEvery(30 * 60 * 1000, 60 * 60 * 1000);
+			checkExpirationTask = new Task.Cpu.FromRunnable("Check expired sessions", Task.PRIORITY_LOW, this::checkExpiredSessions)
+				.executeEvery(30L * 60 * 1000, 60L * 60 * 1000);
 			MemoryManager.register(this);
 		}
 	}

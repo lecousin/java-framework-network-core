@@ -47,8 +47,11 @@ public class SSLLayer {
 		/** Called if the SSL handshake fail. */
 		void handshakeError(SSLException error);
 
-		/** Signal that we are waiting for data. */
-		void waitForData() throws ClosedChannelException;
+		/** Signal that we are waiting for data.
+		 * @param expectedBytes can be used to create a buffer
+		 * @param timeout timeout in milliseconds
+		 */
+		void waitForData(int expectedBytes, int timeout) throws ClosedChannelException;
 		
 		/** Signal data has been received and decrypted. */
 		void dataReceived(LinkedList<ByteBuffer> data);
@@ -89,7 +92,7 @@ public class SSLLayer {
 	/**
 	 * Start the connection with the SSL handshake.
 	 */
-	public void startConnection(TCPConnection conn, boolean clientMode) {
+	public void startConnection(TCPConnection conn, boolean clientMode, int timeout) {
 		try {
 			SSLEngine engine = context.createSSLEngine();
 			if (hostNames != null && !hostNames.isEmpty()) {
@@ -108,7 +111,7 @@ public class SSLLayer {
 			conn.setAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE, inputBuffer);
 			conn.setAttribute(ENGINE_INPUT_LOCK, new Object());
 			conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.TRUE);
-			HandshakeFollowup task = new HandshakeFollowup(conn);
+			HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
 			conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 			task.start();
 		} catch (SSLException e) {
@@ -117,12 +120,14 @@ public class SSLLayer {
 	}
 	
 	private class HandshakeFollowup extends Task.Cpu<Void,NoException> {
-		public HandshakeFollowup(TCPConnection conn) {
+		public HandshakeFollowup(TCPConnection conn, int timeout) {
 			super("SSL Handshake", Task.PRIORITY_NORMAL);
 			this.conn = conn;
+			this.timeout = timeout;
 		}
 		
 		private TCPConnection conn;
+		private int timeout;
 		
 		@SuppressWarnings("unchecked")
 		@Override
@@ -159,13 +164,10 @@ public class SSLLayer {
 								Task<Void,NoException> t = new Task.Cpu.FromRunnable(
 									task, "SSL Server Handshake task", Task.PRIORITY_NORMAL);
 								t.start();
-								t.getOutput().onDone(new Runnable() {
-									@Override
-									public void run() {
-										if (logger.debug())
-											logger.debug("Task done: " + task);
-										followup(conn);
-									}
+								t.getOutput().onDone(() -> {
+									if (logger.debug())
+										logger.debug("Task done: " + task);
+									followup(conn, timeout);
 								});
 							} while (true);
 							return null;
@@ -178,7 +180,7 @@ public class SSLLayer {
 									conn.close();
 									return;
 								}
-								HandshakeFollowup task = new HandshakeFollowup(conn);
+								HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
 								conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 								task.start();
 							});
@@ -192,7 +194,7 @@ public class SSLLayer {
 								if (logger.debug())
 									logger.debug(
 										"No data to unwrap, wait for more data from connection");
-								try { conn.waitForData(); }
+								try { conn.waitForData(8192, timeout); }
 								catch (ClosedChannelException e) {
 									conn.closed();
 									return null;
@@ -219,7 +221,7 @@ public class SSLLayer {
 										logger.debug(
 											"Cannot unwrap, wait for more data from connection");
 									inputBuffer.compact();
-									try { conn.waitForData(); }
+									try { conn.waitForData(8192, timeout); }
 									catch (ClosedChannelException e) {
 										conn.closed();
 										return null;
@@ -257,7 +259,7 @@ public class SSLLayer {
 		            	// if we already have some data ready, let's send it to the connection
 		            	synchronized (inputLock) {
 		            		if (inputBuffer.position() > 0)
-		            			dataReceived(conn, engine, inputBuffer);
+		            			dataReceived(conn, engine, inputBuffer, timeout);
 		            	}
 		            	return null;
 		            default:
@@ -270,7 +272,7 @@ public class SSLLayer {
 		}
 	}
 	
-	private void followup(TCPConnection conn) {
+	private void followup(TCPConnection conn, int timeout) {
 		HandshakeFollowup task = (HandshakeFollowup)conn.getAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE);
 		if (task != null) {
 			synchronized (task) {
@@ -283,7 +285,7 @@ public class SSLLayer {
 		}
 		if (logger.debug())
 			logger.debug("Starting followup task for handshaking for connection " + conn);
-		task = new HandshakeFollowup(conn);
+		task = new HandshakeFollowup(conn, timeout);
 		conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 		task.start();
 	}
@@ -291,7 +293,7 @@ public class SSLLayer {
 	/** To call when some encrypted data has been received.
 	 * The data will be decrypted, and the method dataReceived called on the given connection.
 	 */
-	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable) {
+	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable, int timeout) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 		synchronized (inputLock) {
@@ -317,20 +319,20 @@ public class SSLLayer {
 			synchronized (conn) {
 				Boolean handshaking = (Boolean)conn.getAttribute(HANDSHAKING_ATTRIBUTE);
 				if (handshaking.booleanValue()) {
-					followup(conn);
+					followup(conn, timeout);
 					return;
 				}
 			}
-			dataReceived(conn, engine, inputBuffer); // try to unwrap and send decrypted data to the next protocol
+			dataReceived(conn, engine, inputBuffer, timeout); // try to unwrap and send decrypted data to the next protocol
 		}
 	}
 	
 	// must be called synchronized on inputLock
-	private void dataReceived(TCPConnection conn, SSLEngine engine, ByteBuffer inputBuffer) {
+	private void dataReceived(TCPConnection conn, SSLEngine engine, ByteBuffer inputBuffer, int timeout) {
 		inputBuffer.flip();
 		if (logger.debug())
 			logger.debug("Decrypting " + inputBuffer.remaining() + " bytes from SSL connection " + conn);
-		LinkedList<ByteBuffer> buffers = new LinkedList<ByteBuffer>();
+		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		while (inputBuffer.hasRemaining()) {
 			if (conn.isClosed()) return;
 			ByteBuffer dst = ByteBuffer.allocate(
@@ -349,7 +351,7 @@ public class SSLLayer {
 				if (logger.debug())
 					logger.debug("Not enough data to decrypt, wait for new data from SSL connection " + conn);
 				inputBuffer.compact();
-				try { conn.waitForData(); }
+				try { conn.waitForData(inputBuffer.capacity(), timeout); }
 				catch (ClosedChannelException e) { conn.closed(); }
 				return;
 			}
