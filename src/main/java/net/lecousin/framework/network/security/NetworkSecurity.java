@@ -30,8 +30,9 @@ public class NetworkSecurity {
 	public static NetworkSecurity get(Application app) {
 		NetworkSecurity instance = app.getInstance(NetworkSecurity.class);
 		if (instance == null) {
-			instance = new NetworkSecurity(app);
+			instance = new NetworkSecurity();
 			app.setInstance(NetworkSecurity.class, instance);
+			instance.load(app);
 		}
 		return instance;
 	}
@@ -42,8 +43,7 @@ public class NetworkSecurity {
 	private Map<NetworkSecurityPlugin, NetworkSecurityFeature> plugins = new HashMap<>();
 	private Map<Class<?>, NetworkSecurityFeature> instances = new HashMap<>();
 	
-	private NetworkSecurity(Application app) {
-		load(app);
+	private NetworkSecurity() {
 	}
 	
 	private void load(Application app) {
