@@ -53,36 +53,7 @@ public class NetworkSecurity {
 		appCfgDir = new File(app.getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
 		if (!appCfgDir.exists() && !appCfgDir.mkdirs())
 			logger.error("Unable to create directory " + appCfgDir.getAbsolutePath());
-		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
-			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
-			if (cfgFile.exists()) {
-				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.PRIORITY_IMPORTANT);
-				AsyncSupplier<Object, SerializationException> res =
-					new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
-						new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
-				loaded.addToJoin(1);
-				res.onDone(cfg -> {
-					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
-					instances.put(instance.getClass(), instance);
-					plugins.put(plugin, instance);
-					instance.clean();
-					logger.info("Configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()
-						+ ", plugin " + instance.getClass().getName());
-					loaded.joined();
-				}, err -> {
-					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
-					NetworkSecurityFeature instance = plugin.newInstance(app, null);
-					instances.put(instance.getClass(), instance);
-					plugins.put(plugin, instance);
-					loaded.joined();
-				}, cancel -> loaded.joined());
-				input.closeAfter(res);
-			} else {
-				NetworkSecurityFeature instance = plugin.newInstance(app, null);
-				instances.put(instance.getClass(), instance);
-				plugins.put(plugin, instance);
-			}
-		}
+		loadConfiguration(app, loaded);
 
 		Task<Void, NoException> taskSave = new Task.Cpu.FromRunnable("Save network security", Task.PRIORITY_LOW, this::save);
 		taskSave.executeEvery(2L * 60 * 1000, 30L * 1000);
@@ -100,6 +71,39 @@ public class NetworkSecurity {
 		
 		loaded.thenStart(taskSave, true);
 		loaded.thenStart(taskClean, true);
+	}
+	
+	private void loadConfiguration(Application app, JoinPoint<NoException> loading) {
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
+			if (cfgFile.exists()) {
+				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.PRIORITY_IMPORTANT);
+				AsyncSupplier<Object, SerializationException> res =
+					new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
+						new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+				loading.addToJoin(1);
+				res.onDone(cfg -> {
+					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
+					instances.put(instance.getClass(), instance);
+					plugins.put(plugin, instance);
+					instance.clean();
+					logger.info("Configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()
+						+ ", plugin " + instance.getClass().getName());
+					loading.joined();
+				}, err -> {
+					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
+					NetworkSecurityFeature instance = plugin.newInstance(app, null);
+					instances.put(instance.getClass(), instance);
+					plugins.put(plugin, instance);
+					loading.joined();
+				}, cancel -> loading.joined());
+				input.closeAfter(res);
+			} else {
+				NetworkSecurityFeature instance = plugin.newInstance(app, null);
+				instances.put(instance.getClass(), instance);
+				plugins.put(plugin, instance);
+			}
+		}		
 	}
 	
 	public IAsync<NoException> isLoaded() {

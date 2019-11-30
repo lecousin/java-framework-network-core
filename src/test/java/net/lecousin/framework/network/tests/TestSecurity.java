@@ -5,16 +5,28 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 
 import net.lecousin.framework.application.LCCore;
+import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.io.IO;
+import net.lecousin.framework.io.serialization.SerializationException;
+import net.lecousin.framework.io.serialization.TypeDefinition;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.security.BruteForceAttempt;
 import net.lecousin.framework.network.security.IPBlackList;
 import net.lecousin.framework.network.security.NetworkSecurity;
+import net.lecousin.framework.network.security.NetworkSecurityExtensionPoint;
+import net.lecousin.framework.network.security.NetworkSecurityFeature;
+import net.lecousin.framework.network.security.NetworkSecurityPlugin;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.tests.tcp.WelcomeProtocol;
+import net.lecousin.framework.plugins.ExtensionPoints;
+import net.lecousin.framework.xml.serialization.XMLDeserializer;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -120,6 +132,26 @@ public class TestSecurity extends LCCoreAbstractTest {
 		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
 		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
 		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
+	}
+	
+	@Test
+	public void testLoadConfiguration() throws Exception {
+		JoinPoint<Exception> jp = new JoinPoint<>();
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			IO.Readable input = LCCore.getApplication().getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.PRIORITY_NORMAL);
+			AsyncSupplier<Object, SerializationException> res =
+				new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
+					new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+			jp.addToJoin(1);
+			res.onDone(cfg -> {
+				NetworkSecurityFeature instance = plugin.newInstance(LCCore.getApplication(), cfg);
+				instance.clean();
+				jp.joined();
+			}, err -> jp.error(err), cancel -> jp.cancel(cancel));
+			input.closeAfter(res);
+		}
+		jp.start();
+		jp.blockThrow(0);
 	}
 	
 }
