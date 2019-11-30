@@ -31,18 +31,24 @@ public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 		log.getLogger("SSL").setLevel(Level.TRACE);
 		log.getLogger(TCPClient.class).setLevel(Level.TRACE);
 		log.getLogger(SSLClient.class).setLevel(Level.TRACE);
+		
 		// security
-		File file = new File(LCCore.getApplication().getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
-		if (!file.exists()) file.mkdirs();
-		file = new File(file, "net.lecousin.framework.network.security.xml");
-		IO.Readable input = LCCore.getApplication().getResource("net/lecousin/framework/network/test/net.lecousin.framework.network.security.xml", Task.PRIORITY_NORMAL);
+		File cfgDir = new File(LCCore.getApplication().getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
+		if (!cfgDir.exists()) cfgDir.mkdirs();
+		File file = new File(cfgDir, "net.lecousin.framework.network.security.IPBlackList$Plugin.xml");
+		IO.Readable input = LCCore.getApplication().getResource("tests-network-core/security/net.lecousin.framework.network.security.IPBlackList$Plugin.xml", Task.PRIORITY_NORMAL);
 		FileIO.WriteOnly output = new FileIO.WriteOnly(file, Task.PRIORITY_NORMAL);
 		IOUtil.copy(input, output, -1, true, null, 0).blockThrow(0);
+		file = new File(cfgDir, "net.lecousin.framework.network.security.BruteForceAttempt$Plugin.xml");
+		input = LCCore.getApplication().getResource("tests-network-core/security/net.lecousin.framework.network.security.BruteForceAttempt$Plugin.xml", Task.PRIORITY_NORMAL);
+		output = new FileIO.WriteOnly(file, Task.PRIORITY_NORMAL);
+		IOUtil.copy(input, output, -1, true, null, 0).blockThrow(0);
+		
 		// SSL
 		System.setProperty("com.sun.net.ssl.checkRevocation", "false");
 		SSLContextConfig sslConfig = new SSLContextConfig();
-		sslConfig.keyStore = new SSLContextConfig.Store("JKS", "classpath:net/lecousin/framework/network/test/ssl/keystore.ssl.test", "password");
-		sslConfig.trustStore = new SSLContextConfig.Store("JKS", "classpath:net/lecousin/framework/network/test/ssl/truststore.ssl.test", "password");
+		sslConfig.keyStore = new SSLContextConfig.Store("JKS", "classpath:tests-network-core/ssl/keystore.ssl.test", "password");
+		sslConfig.trustStore = new SSLContextConfig.Store("JKS", "classpath:tests-network-core/ssl/truststore.ssl.test", "password");
 		sslTest = SSLContextConfig.create(sslConfig);
 	}
 	

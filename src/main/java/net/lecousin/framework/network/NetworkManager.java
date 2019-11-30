@@ -115,13 +115,14 @@ public class NetworkManager implements Closeable {
 	private NetworkManager(Application app) {
 		logger = app.getLoggerFactory().getLogger("network");
 		dataLogger = app.getLoggerFactory().getLogger("network-data");
+		logger.info("Starting Network Manager for application " + app.getGroupId() + "-" + app.getArtifactId());
+		NetworkSecurity security = NetworkSecurity.get(app);
 		app.toClose(this);
 		try {
 			selector = Selector.open();
 		} catch (IOException e) {
 			throw new RuntimeException("Unable to start Network Manager", e);
 		}
-		NetworkSecurity security = NetworkSecurity.get(app);
 		security.isLoaded().onDone(() -> {
 			worker = app.getThreadFactory().newThread(new WorkerLoop(security.getFeature(IPBlackList.class)));
 			worker.setName("Network Manager");

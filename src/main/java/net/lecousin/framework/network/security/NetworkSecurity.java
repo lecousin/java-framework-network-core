@@ -27,7 +27,7 @@ import net.lecousin.framework.xml.serialization.XMLSerializer;
 public class NetworkSecurity {
 	
 	/** Get the instance for the given application. */
-	public static NetworkSecurity get(Application app) {
+	public static synchronized NetworkSecurity get(Application app) {
 		NetworkSecurity instance = app.getInstance(NetworkSecurity.class);
 		if (instance == null) {
 			instance = new NetworkSecurity();
@@ -48,6 +48,7 @@ public class NetworkSecurity {
 	
 	private void load(Application app) {
 		logger = app.getLoggerFactory().getLogger(NetworkSecurity.class);
+		logger.info("Loading security configuration for application " + app.getGroupId() + "-" + app.getArtifactId());
 		appCfgDir = new File(app.getProperty(Application.PROPERTY_CONFIG_DIRECTORY));
 		if (!appCfgDir.exists() && !appCfgDir.mkdirs())
 			logger.error("Unable to create directory " + appCfgDir.getAbsolutePath());
@@ -63,6 +64,9 @@ public class NetworkSecurity {
 					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
 					instances.put(instance.getClass(), instance);
 					plugins.put(plugin, instance);
+					instance.clean();
+					logger.info("Configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()
+						+ ", plugin " + instance.getClass().getName());
 					loaded.joined();
 				}, err -> {
 					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
@@ -78,15 +82,12 @@ public class NetworkSecurity {
 				plugins.put(plugin, instance);
 			}
 		}
-		clean();
 
 		Task<Void, NoException> taskSave = new Task.Cpu.FromRunnable("Save network security", Task.PRIORITY_LOW, this::save);
 		taskSave.executeEvery(2L * 60 * 1000, 30L * 1000);
-		taskSave.start();
 		
 		Task<Void, NoException> taskClean = new Task.Cpu.FromRunnable("Cleaning network security", Task.PRIORITY_LOW, this::clean);
 		taskClean.executeEvery(5L * 60 * 1000, 10L * 60 * 1000);
-		taskClean.start();
 		
 		app.toClose(() -> {
 			taskSave.cancel(new CancelException("Application stopping"));
@@ -95,6 +96,9 @@ public class NetworkSecurity {
 			save().block(0);
 		});
 		loaded.start();
+		
+		loaded.thenStart(taskSave, true);
+		loaded.thenStart(taskClean, true);
 	}
 	
 	public IAsync<NoException> isLoaded() {
