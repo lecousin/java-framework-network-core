@@ -23,6 +23,7 @@ import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.server.protocol.ServerProtocolCommonAttributes;
 import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
 
@@ -56,6 +57,7 @@ public class TCPServer implements Closeable {
 	}
 	
 	/** Return the list of addresses this server listens to. */
+	@SuppressWarnings("squid:S1319") // return ArrayList instead of List
 	public ArrayList<InetSocketAddress> getLocalAddresses() {
 		ArrayList<InetSocketAddress> addresses = new ArrayList<>(channels.size());
 		for (ServerChannel channel : channels)
@@ -65,6 +67,7 @@ public class TCPServer implements Closeable {
 	}
 	
 	/** Return a list of currently connected clients. */
+	@SuppressWarnings("squid:S1319") // return ArrayList instead of List
 	public ArrayList<Closeable> getConnectedClients() {
 		ArrayList<Closeable> list;
 		synchronized (clients) {
@@ -173,7 +176,8 @@ public class TCPServer implements Closeable {
 		public Client(SocketChannel channel) {
 			this.channel = channel;
 			publicInterface = new TCPServerClient(this);
-			publicInterface.setAttribute(ServerProtocol.ATTRIBUTE_CONNECTION_ESTABLISHED_NANOTIME, Long.valueOf(System.nanoTime()));
+			publicInterface.setAttribute(ServerProtocolCommonAttributes.ATTRIBUTE_CONNECTION_ESTABLISHED_NANOTIME,
+				Long.valueOf(System.nanoTime()));
 		}
 		
 		SocketChannel channel;
@@ -223,6 +227,7 @@ public class TCPServer implements Closeable {
 		
 		@Override
 		public void sendTimeout() {
+			// nothing, client will be closed
 		}
 		
 		public synchronized void waitForData(int timeout) throws ClosedChannelException {
@@ -270,46 +275,15 @@ public class TCPServer implements Closeable {
 			if (channel == null) throw new ClosedChannelException();
 			// ask the protocol to do any needed processing before sending the data
 			LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
+			Async<IOException> sp = new Async<>();
 			boolean waitBefore = waitToSend;
 			if (!waitToSend) {
 				// we can start sending data right away
-				ByteBuffer buffer = null;
-				while (true) {
-					if (buffer == null) {
-						if (buffers.isEmpty())
-							break;
-						buffer = buffers.removeFirst();
-					}
-					if (manager.getDataLogger().trace()) {
-						StringBuilder s = new StringBuilder(128 + buffer.remaining() * 5);
-						s.append("Sending ").append(buffer.remaining()).append(" bytes to client:\r\n");
-						DebugUtil.dumpHex(s, buffer);
-						manager.getDataLogger().trace(s.toString());
-					}
-					int nb;
-					try { nb = channel.write(buffer); }
-					catch (IOException e) {
-						// error while writing
-						close();
-						return new Async<>(e);
-					}
-					if (manager.getLogger().debug()) manager.getLogger().debug(nb + " bytes sent on " + channel);
-					if (!buffer.hasRemaining()) {
-						// done with this buffer
-						buffer = null;
-						if (buffers.isEmpty()) {
-							// no more buffer
-							if (closeAfter) close();
-							return new Async<>(true);
-						}
-						continue;
-					}
-					if (nb == 0) break; // cannot write anymore
-				}
-				if (buffer != null) buffers.addFirst(buffer);
+				send(buffers, closeAfter, sp);
+				if (sp.isDone())
+					return sp;
 				waitToSend = true;
 			}
-			Async<IOException> sp = new Async<>();
 			while (!buffers.isEmpty()) {
 				ByteBuffer b = buffers.removeFirst();
 				outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
@@ -318,6 +292,48 @@ public class TCPServer implements Closeable {
 			if (!waitBefore && dataToSendProvider == null)
 				manager.register(channel, SelectionKey.OP_WRITE, this, 0);
 			return sp;
+		}
+		
+		private void send(LinkedList<ByteBuffer> buffers, boolean closeAfter, Async<IOException> sp) {
+			ByteBuffer buffer = null;
+			while (true) {
+				if (buffer == null) {
+					if (buffers.isEmpty())
+						break;
+					buffer = buffers.removeFirst();
+				}
+				if (manager.getDataLogger().trace())
+					traceSendingData(buffer);
+				int nb;
+				try { nb = channel.write(buffer); }
+				catch (IOException e) {
+					// error while writing
+					close();
+					sp.error(e);
+					return;
+				}
+				if (manager.getLogger().debug()) manager.getLogger().debug(nb + " bytes sent on " + channel);
+				if (!buffer.hasRemaining()) {
+					// done with this buffer
+					buffer = null;
+					if (buffers.isEmpty()) {
+						// no more buffer
+						if (closeAfter) close();
+						sp.unblock();
+						return;
+					}
+					continue;
+				}
+				if (nb == 0) break; // cannot write anymore
+			}
+			if (buffer != null) buffers.addFirst(buffer);
+		}
+		
+		private void traceSendingData(ByteBuffer buffer) {
+			StringBuilder s = new StringBuilder(128 + buffer.remaining() * 5);
+			s.append("Sending ").append(buffer.remaining()).append(" bytes to client:\r\n");
+			DebugUtil.dumpHex(s, buffer);
+			manager.getDataLogger().trace(s.toString());
 		}
 		
 		@Override
@@ -330,34 +346,14 @@ public class TCPServer implements Closeable {
 					dataToSendSP = null;
 				}
 				while (outputBuffers != null && !outputBuffers.isEmpty()) {
-					Pair<ByteBuffer,Async<IOException>> toWrite = outputBuffers.getFirst();
-					int nb;
-					do {
-						try { nb = channel.write(toWrite.getValue1()); }
-						catch (IOException e) {
-							// error while writing
-							outputBuffers.removeFirst();
-							if (toWrite.getValue2() != null)
-								toWrite.getValue2().error(e);
-							while (!outputBuffers.isEmpty()) {
-								toWrite = outputBuffers.removeFirst();
-								if (toWrite.getValue2() != null)
-									toWrite.getValue2().error(e);
-							}
-							close();
-							return;
-						}
-						if (manager.getLogger().debug())
-							manager.getLogger().debug(nb + " bytes sent on " + channel);
-						if (!toWrite.getValue1().hasRemaining()) {
-							// we are done with this buffer
-							outputBuffers.removeFirst();
-							if (toWrite.getValue2() != null)
-								toWrite.getValue2().unblock();
-							break;
-						}
-					} while (nb > 0);
-					if (nb == 0) break; // cannot write anymore
+					try {
+						if (sendNextBuffer() == 0)
+							break; // cannot write anymore
+					} catch (IOException e) {
+						close();
+						return;
+					}
+
 				}
 				if (outputBuffers == null) return;
 				if (outputBuffers.isEmpty()) {
@@ -376,6 +372,36 @@ public class TCPServer implements Closeable {
 						+ outputBuffers.size() + " buffer(s) remaining");
 				manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
 			}
+		}
+		
+		private int sendNextBuffer() throws IOException {
+			Pair<ByteBuffer,Async<IOException>> toWrite = outputBuffers.getFirst();
+			int nb;
+			do {
+				try { nb = channel.write(toWrite.getValue1()); }
+				catch (IOException e) {
+					// error while writing
+					outputBuffers.removeFirst();
+					if (toWrite.getValue2() != null)
+						toWrite.getValue2().error(e);
+					while (!outputBuffers.isEmpty()) {
+						toWrite = outputBuffers.removeFirst();
+						if (toWrite.getValue2() != null)
+							toWrite.getValue2().error(e);
+					}
+					throw e;
+				}
+				if (manager.getLogger().debug())
+					manager.getLogger().debug(nb + " bytes sent on " + channel);
+				if (!toWrite.getValue1().hasRemaining()) {
+					// we are done with this buffer
+					outputBuffers.removeFirst();
+					if (toWrite.getValue2() != null)
+						toWrite.getValue2().unblock();
+					break;
+				}
+			} while (nb > 0);
+			return nb;
 		}
 		
 		public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {

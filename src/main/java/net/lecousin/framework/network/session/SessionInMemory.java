@@ -67,7 +67,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	}
 	
 	@Override
-	public AsyncSupplier<Boolean, Exception> load(String id, ISession session) {
+	public AsyncSupplier<Boolean, SessionStorageException> load(String id, ISession session) {
 		Pair<Long, List<Pair<String, Serializable>>> s;
 		synchronized (this) { s = sessions.get(id); }
 		if (s == null) return new AsyncSupplier<>(Boolean.FALSE, null);
@@ -89,10 +89,11 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	
 	@Override
 	public void release(String id) {
+		// nothing to release in memory
 	}
 	
 	@Override
-	public IAsync<Exception> save(String id, ISession session) {
+	public IAsync<SessionStorageException> save(String id, ISession session) {
 		Set<String> keys = session.getKeys();
 		ArrayList<Pair<String, Serializable>> list = new ArrayList<>(keys.size());
 		for (String key : keys)

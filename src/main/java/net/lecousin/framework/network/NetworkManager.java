@@ -167,6 +167,10 @@ public class NetworkManager implements Closeable {
 		private Listener listener;
 		private int timeout;
 		private AsyncSupplier<SelectionKey, IOException> result;
+		
+		private String traceChannelOperations() {
+			return channel + " for operations " + newOps + " and timeout " + timeout;
+		}
 	}
 	
 	private static class Attachment {
@@ -256,7 +260,7 @@ public class NetworkManager implements Closeable {
 		req.timeout = timeout;
 		req.result = new AsyncSupplier<>();
 		if (logger.trace())
-			logger.trace("Registering channel " + channel + " for operations " + ops + " with timeout " + timeout);
+			logger.trace("Registering " + req.traceChannelOperations());
 		synchronized (requests) {
 			requests.addLast(req);
 		}
@@ -281,6 +285,10 @@ public class NetworkManager implements Closeable {
 		private IPBlackList blacklist;
 		
 		@Override
+		@SuppressWarnings({
+			"squid:S3776", "squid:S1141", // we keep complexity and nested try for performance
+			"squid:S1193" // instanceof IOException
+		})
 		public void run() {
 			long start = System.nanoTime();
 			int loopCount = 0;
@@ -450,8 +458,7 @@ public class NetworkManager implements Closeable {
 				try {
 					processRegisterRequest(req);
 				} catch (ClosedChannelException e) {
-					if (logger.info()) logger.info("Channel closed while registering " + req.channel
-						+ " for operations " + req.newOps);
+					if (logger.info()) logger.info("Channel closed while registering " + req.traceChannelOperations());
 					if (req.listener != null)
 						channelClosed(req.listener);
 					req.result.error(e);
@@ -459,13 +466,14 @@ public class NetworkManager implements Closeable {
 			} while (!stop);
 		}
 		
+		@SuppressWarnings("squid:S1141") // nested try
 		private void processRegisterRequest(RegisterRequest req) throws ClosedChannelException {
 			SelectionKey key = req.channel.keyFor(selector);
 			if (key == null) {
 				Attachment listeners = new Attachment();
 				listeners.set(req.newOps, req.listener, req.timeout);
 				key = req.channel.register(selector, req.newOps, listeners);
-				if (logger.trace()) logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
+				if (logger.trace()) logger.trace("Registered: " + req.traceChannelOperations());
 				req.result.unblockSuccess(key);
 				return;
 			}
@@ -477,7 +485,7 @@ public class NetworkManager implements Closeable {
 					key.interestOps(curOps | req.newOps);
 					listeners.set(req.newOps, req.listener, req.timeout);
 					if (logger.trace())
-						logger.trace("Registered: " + req.channel + " for operations " + req.newOps);
+						logger.trace("Registered: " + req.traceChannelOperations());
 					req.result.unblockSuccess(key);
 					return;
 				}
@@ -500,13 +508,13 @@ public class NetworkManager implements Closeable {
 					logger.error("Error calling listener", t);
 				}
 			} catch (CancelledKeyException e) {
-				if (logger.info()) logger.info("Cancelled key while registering " + req.channel
-					+ " for operations " + req.newOps);
+				if (logger.info()) logger.info("Cancelled key while registering " + req.traceChannelOperations());
 				listeners.channelClosed();
 				req.result.error(IO.error(e));
 			}
 		}
 		
+		@SuppressWarnings("squid:S3776") // complexity
 		private long checkTimeouts() {
 			long now = System.currentTimeMillis();
 			long nextTimeout = 0;

@@ -8,8 +8,6 @@ import net.lecousin.framework.network.server.TCPServerClient;
 /** Interface to implement a protocol on server-side. */
 public interface ServerProtocol {
 
-	String ATTRIBUTE_CONNECTION_ESTABLISHED_NANOTIME = "protocol.connection_started";
-	
 	/**
 	 * Called when a new client connects on the server.
 	 * The implementation should initialise the status, may send first data to the client,

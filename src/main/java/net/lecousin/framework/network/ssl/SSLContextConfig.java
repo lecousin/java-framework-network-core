@@ -13,6 +13,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
 /** Configuration to create an SSLContext. */
+@SuppressWarnings("squid:ClassVariableVisibilityCheck") // only used on creation
 public class SSLContextConfig {
 
 	public String algorithm = "TLS";

@@ -22,6 +22,8 @@ import net.lecousin.framework.util.StringUtil;
  * It stores the client IP address.
  */
 public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
+	
+	public static final String BRUTE_FORCE_FUNCTIONALITY = "Session";
 
 	/** Constructor. */
 	public NetworkSessionProvider(SessionStorage storage, Application app) {
@@ -70,12 +72,12 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	public AsyncSupplier<Session, NoException> get(String id, TCPRemote client) {
 		if (id == null) return null;
 		if (id.length() != 3 * 16) {
-			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", id);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, id);
 			return new AsyncSupplier<>(null, null);
 		}
 		Session session = new Session(id);
 		String sid = id.substring(16, id.length() - 16);
-		AsyncSupplier<Boolean, Exception> loadSession = storage.load(sid, session);
+		AsyncSupplier<Boolean, SessionStorageException> loadSession = storage.load(sid, session);
 		String ts = id.substring(0,16);
 		String r = id.substring(id.length() - 16);
 		AsyncSupplier<Session, NoException> result = new AsyncSupplier<>();
@@ -102,11 +104,11 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 		if (s == null)
 			return null;
 		if (StringUtil.decodeHexaLong(r) != ((Long)s.getData("_nsrd")).longValue()) {
-			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
 			return null;
 		}
 		if (StringUtil.decodeHexaLong(ts) != ((Long)s.getData("_nsts")).longValue()) {
-			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
 			return null;
 		}
 		byte[] sip = (byte[])s.getData("_nsip");
@@ -116,7 +118,7 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 		if (!(ip instanceof InetSocketAddress)) return null;
 		byte[] cip = ((InetSocketAddress)ip).getAddress().getAddress();
 		if (!ArrayUtil.equals(sip, cip)) {
-			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, "Session", sid);
+			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
 			return null;
 		}
 		return s;

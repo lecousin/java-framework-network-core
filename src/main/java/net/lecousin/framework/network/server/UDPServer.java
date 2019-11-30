@@ -74,7 +74,6 @@ public class UDPServer implements Closeable {
 	}
 	
 	/** Listen to the given address. */
-	@SuppressWarnings("resource")
 	public AsyncSupplier<SocketAddress, IOException> bind(SocketAddress local) {
 		AsyncSupplier<SocketAddress, IOException> result = new AsyncSupplier<>();
 		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
@@ -117,10 +116,12 @@ public class UDPServer implements Closeable {
 		
 		@Override
 		public void channelClosed() {
+			// nothing to do
 		}
 
 		@Override
 		public void sendTimeout() {
+			// nothing to do
 		}
 		
 		@Override
@@ -144,6 +145,7 @@ public class UDPServer implements Closeable {
 
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
+			// nothing to do
 		}
 		
 		protected TurnArray<Pair<SocketAddress,ByteBuffer>> sendQueue = new TurnArray<>(10);

@@ -71,7 +71,6 @@ public class TunnelProtocol implements ServerProtocol {
 		boolean readAgain = previous.isDone();
 		Async<IOException> ls = new Async<>();
 		client.setAttribute(ATTRIBUTE_LAST_SEND, ls);
-		@SuppressWarnings("resource")
 		TCPClient tunnel = (TCPClient)client.getAttribute(ATTRIBUTE_TUNNEL);
 		if (readAgain)
 			try { client.waitForData(0); }

@@ -115,7 +115,8 @@ public class SSLLayer {
 			conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 			task.start();
 		} catch (SSLException e) {
-			// TODO
+			logger.error("Error starting SSL connection", e);
+			conn.close();
 		}
 	}
 	
@@ -136,139 +137,155 @@ public class SSLLayer {
 			synchronized (conn) {
 				lock = (LockPoint<NoException>)conn.getAttribute(HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE);
 				if (lock == null) {
-					lock = new LockPoint<NoException>();
+					lock = new LockPoint<>();
 					conn.setAttribute(HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE, lock);
 				}
 			}
 			lock.lock();
 			try {
-				SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
-				ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
-				Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
-				do {
-					if (logger.debug())
-						logger.debug("SSL Handshake status for connection: "
-							+ engine.getHandshakeStatus().name() + ", current input buffer: "
-							+ inputBuffer.position() + " on " + conn);
-					if (conn.isClosed()) {
-						conn.closed();
-						return null;
-					}
-					switch (engine.getHandshakeStatus()) {
-					case NEED_TASK: {
-							do {
-								Runnable task = engine.getDelegatedTask();
-								if (logger.debug())
-									logger.debug("Task to run: " + task);
-								if (task == null) break;
-								Task<Void,NoException> t = new Task.Cpu.FromRunnable(
-									task, "SSL Server Handshake task", Task.PRIORITY_NORMAL);
-								t.start();
-								t.getOutput().onDone(() -> {
-									if (logger.debug())
-										logger.debug("Task done: " + task);
-									followup(conn, timeout);
-								});
-							} while (true);
-							return null;
-						}
-					case NEED_WRAP:
-						try {
-							IAsync<IOException> send = conn.sendEmpty(emptyBuffer);
-							send.onDone(() -> {
-								if (send.hasError()) {
-									conn.close();
-									return;
-								}
-								HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
-								conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
-								task.start();
-							});
-						} catch (ClosedChannelException e) {
-							conn.closed();
-						}
-						return null;
-					case NEED_UNWRAP:
-						synchronized (inputLock) {
-							if (inputBuffer.position() == 0) {
-								if (logger.debug())
-									logger.debug(
-										"No data to unwrap, wait for more data from connection");
-								try { conn.waitForData(8192, timeout); }
-								catch (ClosedChannelException e) {
-									conn.closed();
-									return null;
-								}
-								return null;
-							}
-							ByteBuffer dst = ByteBuffer.allocate(
-								Math.max(engine.getSession().getApplicationBufferSize(),
-										engine.getSession().getPacketBufferSize()));
-							do {
-								inputBuffer.flip();
-								SSLEngineResult result;
-								try { result = engine.unwrap(inputBuffer, dst); }
-								catch (SSLException e) {
-									if (logger.error())
-										logger.error("Cannot unwrap SSL data from connection "
-											+ conn, e);
-									conn.handshakeError(e);
-									conn.close();
-									return null;
-								}
-								if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
-									if (logger.debug())
-										logger.debug(
-											"Cannot unwrap, wait for more data from connection");
-									inputBuffer.compact();
-									try { conn.waitForData(8192, timeout); }
-									catch (ClosedChannelException e) {
-										conn.closed();
-										return null;
-									}
-									return null;
-								}
-								if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-									if (logger.debug())
-										logger.debug(
-											"Cannot unwrap because buffer is too small, enlarge it");
-									ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
-									dst.flip();
-									b.put(dst);
-									dst = b;
-									continue;
-								}
-								if (logger.debug())
-									logger.debug(dst.position()
-										+ " unwrapped from SSL, remaining input: " + inputBuffer.remaining());
-								inputBuffer.compact();
-								break;
-							} while (true);
-						}
-						break;
-		            case FINISHED:
-		            case NOT_HANDSHAKING:
-		            	// handshaking done
-		            	synchronized (conn) {
-		            		// check we didn't already set it to avoid starting multiple times the next protocol
-		            		Boolean still = (Boolean)conn.getAttribute(HANDSHAKING_ATTRIBUTE);
-		            		if (!still.booleanValue()) return null;
-		            		conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.FALSE);
-		            	}
-		            	conn.handshakeDone();
-		            	// if we already have some data ready, let's send it to the connection
-		            	synchronized (inputLock) {
-		            		if (inputBuffer.position() > 0)
-		            			dataReceived(conn, engine, inputBuffer, timeout);
-		            	}
-		            	return null;
-		            default:
-		            	return null;
-					}
-				} while (true);
+				doFollowup();
 			} finally {
 				lock.unlock();
 			}
+			return null;
+		}
+		
+		private void doFollowup() {
+			SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
+			ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+			Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
+			do {
+				if (logger.debug())
+					logger.debug("SSL Handshake status for connection: "
+						+ engine.getHandshakeStatus().name() + ", current input buffer: "
+						+ inputBuffer.position() + " on " + conn);
+				if (conn.isClosed()) {
+					conn.closed();
+					return;
+				}
+				switch (engine.getHandshakeStatus()) {
+				case NEED_TASK:
+					needTask(engine);
+					return;
+				case NEED_WRAP:
+					needWrap();
+					return;
+				case NEED_UNWRAP:
+					if (needUnwrap(engine, inputBuffer, inputLock))
+						return;
+					break;
+	            case FINISHED:
+	            case NOT_HANDSHAKING:
+	            	// handshaking done
+	            	synchronized (conn) {
+	            		// check we didn't already set it to avoid starting multiple times the next protocol
+	            		Boolean still = (Boolean)conn.getAttribute(HANDSHAKING_ATTRIBUTE);
+	            		if (!still.booleanValue()) return;
+	            		conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.FALSE);
+	            	}
+	            	conn.handshakeDone();
+	            	// if we already have some data ready, let's send it to the connection
+	            	synchronized (inputLock) {
+	            		if (inputBuffer.position() > 0)
+	            			dataReceived(conn, engine, inputBuffer, timeout);
+	            	}
+	            	return;
+	            default:
+	            	return;
+				}
+			} while (true);
+		}
+		
+		private void needTask(SSLEngine engine) {
+			do {
+				Runnable task = engine.getDelegatedTask();
+				if (logger.debug())
+					logger.debug("Task to run: " + task);
+				if (task == null) break;
+				Task<Void,NoException> t = new Task.Cpu.FromRunnable(
+					task, "SSL Server Handshake task", Task.PRIORITY_NORMAL);
+				t.start();
+				t.getOutput().onDone(() -> {
+					if (logger.debug())
+						logger.debug("Task done: " + task);
+					followup(conn, timeout);
+				});
+			} while (true);
+		}
+		
+		private void needWrap() {
+			try {
+				IAsync<IOException> send = conn.sendEmpty(emptyBuffer);
+				send.onDone(() -> {
+					if (send.hasError()) {
+						conn.close();
+						return;
+					}
+					HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
+					conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
+					task.start();
+				});
+			} catch (ClosedChannelException e) {
+				conn.closed();
+			}
+		}
+		
+		private boolean needUnwrap(SSLEngine engine, ByteBuffer inputBuffer, Object inputLock) {
+			synchronized (inputLock) {
+				if (inputBuffer.position() == 0) {
+					if (logger.debug())
+						logger.debug(
+							"No data to unwrap, wait for more data from connection");
+					try { conn.waitForData(8192, timeout); }
+					catch (ClosedChannelException e) {
+						conn.closed();
+					}
+					return true;
+				}
+				ByteBuffer dst = ByteBuffer.allocate(
+					Math.max(engine.getSession().getApplicationBufferSize(),
+							engine.getSession().getPacketBufferSize()));
+				do {
+					inputBuffer.flip();
+					SSLEngineResult result;
+					try { result = engine.unwrap(inputBuffer, dst); }
+					catch (SSLException e) {
+						if (logger.error())
+							logger.error("Cannot unwrap SSL data from connection "
+								+ conn, e);
+						conn.handshakeError(e);
+						conn.close();
+						return true;
+					}
+					if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
+						if (logger.debug())
+							logger.debug(
+								"Cannot unwrap, wait for more data from connection");
+						inputBuffer.compact();
+						try { conn.waitForData(8192, timeout); }
+						catch (ClosedChannelException e) {
+							conn.closed();
+						}
+						return true;
+					}
+					if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
+						if (logger.debug())
+							logger.debug(
+								"Cannot unwrap because buffer is too small, enlarge it");
+						ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
+						dst.flip();
+						b.put(dst);
+						dst = b;
+						continue;
+					}
+					if (logger.debug())
+						logger.debug(dst.position()
+							+ " unwrapped from SSL, remaining input: " + inputBuffer.remaining());
+					inputBuffer.compact();
+					break;
+				} while (true);
+			}
+			return false;
 		}
 	}
 	
@@ -310,7 +327,7 @@ public class SSLLayer {
 				b.put(inputBuffer);
 				inputBuffer = b;
 				conn.setAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE, inputBuffer);
-				// TODO reduce it sometimes ???
+				// may be we should reduce buffer size sometimes ?
 			}
 			inputBuffer.put(data);
 			if (onbufferavailable != null)
@@ -333,10 +350,12 @@ public class SSLLayer {
 		if (logger.debug())
 			logger.debug("Decrypting " + inputBuffer.remaining() + " bytes from SSL connection " + conn);
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
+		ByteBuffer dst = null;
 		while (inputBuffer.hasRemaining()) {
 			if (conn.isClosed()) return;
-			ByteBuffer dst = ByteBuffer.allocate(
-				Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()));
+			if (dst == null)
+				dst = ByteBuffer.allocate(
+					Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()));
 			SSLEngineResult result;
 			try { result = engine.unwrap(inputBuffer, dst); }
 			catch (SSLException e) {
@@ -369,12 +388,14 @@ public class SSLLayer {
 			if (logger.debug())
 				logger.debug(dst.remaining() + " bytes decrypted from SSL connection " + conn);
 			buffers.add(dst);
+			dst = null;
 		}
 		conn.dataReceived(buffers);
 		inputBuffer.compact();
 	}
 	
 	/** Encrypt the given data. */
+	@SuppressWarnings("squid:S1319") // return LinkedList instead of List
 	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, ByteBuffer data) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		if (logger.debug())

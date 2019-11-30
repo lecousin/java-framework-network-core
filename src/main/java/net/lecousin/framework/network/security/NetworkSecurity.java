@@ -2,6 +2,7 @@ package net.lecousin.framework.network.security;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -124,9 +125,13 @@ public class NetworkSecurity {
 			if (cfg == null)
 				continue;
 			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
-			if (cfgFile.exists() && !cfgFile.delete()) {
-				logger.error("Unable to delete configuration file " + cfgFile.getAbsolutePath());
-				continue;
+			if (cfgFile.exists()) {
+				try {
+					Files.delete(cfgFile.toPath());
+				} catch (Exception e) {
+					logger.error("Unable to delete configuration file " + cfgFile.getAbsolutePath(), e);
+					continue;
+				}
 			}
 			FileIO.WriteOnly output = new FileIO.WriteOnly(cfgFile, Task.PRIORITY_IMPORTANT);
 			IAsync<SerializationException> ser =

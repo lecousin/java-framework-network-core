@@ -83,6 +83,7 @@ public class SSLServerProtocol implements ServerProtocol {
 		
 		@Override
 		public void handshakeError(SSLException error) {
+			// nothing to do
 		}
 		
 		@Override
@@ -132,7 +133,7 @@ public class SSLServerProtocol implements ServerProtocol {
 	
 	@Override
 	public int getInputBufferSize() {
-		return 16384; // TODO ask ssl engine??
+		return 16384; // ask ssl engine??
 	}
 	
 	@Override
