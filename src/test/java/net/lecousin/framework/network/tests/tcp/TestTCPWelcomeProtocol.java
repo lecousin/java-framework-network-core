@@ -139,8 +139,8 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 	@Test
 	public void testFloodMe() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
-		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
-		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
+		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
 		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.INFO);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.INFO);
 		TCPClient client = connectClient();
