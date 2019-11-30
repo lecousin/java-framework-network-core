@@ -124,7 +124,11 @@ public class NetworkManager implements Closeable {
 			throw new RuntimeException("Unable to start Network Manager", e);
 		}
 		security.isLoaded().onDone(() -> {
-			worker = app.getThreadFactory().newThread(new WorkerLoop(security.getFeature(IPBlackList.class)));
+			IPBlackList bl = security.getFeature(IPBlackList.class);
+			if (bl == null)
+				logger.error("Network security does not contain IPBlackList for application "
+					+ app.getGroupId() + "-" + app.getArtifactId());
+			worker = app.getThreadFactory().newThread(new WorkerLoop(bl));
 			worker.setName("Network Manager");
 			worker.start();
 		});
@@ -167,6 +171,7 @@ public class NetworkManager implements Closeable {
 		private Listener listener;
 		private int timeout;
 		private AsyncSupplier<SelectionKey, IOException> result;
+		private Exception registerStack;
 		
 		private String traceChannelOperations() {
 			return channel + " for operations " + newOps + " and timeout " + timeout;
@@ -261,6 +266,8 @@ public class NetworkManager implements Closeable {
 		req.result = new AsyncSupplier<>();
 		if (logger.trace())
 			logger.trace("Registering " + req.traceChannelOperations());
+		if (logger.debug())
+			req.registerStack = new Exception("registration was here");
 		synchronized (requests) {
 			requests.addLast(req);
 		}
@@ -354,7 +361,6 @@ public class NetworkManager implements Closeable {
 										listeners.reset();
 										endOfInput(tcp, buffer);
 									} else {
-										dataReceived(tcp, buffer, nb, key.channel());
 										try {
 											int iops = key.interestOps();
 											key.interestOps(iops - (iops & SelectionKey.OP_READ));
@@ -363,11 +369,11 @@ public class NetworkManager implements Closeable {
 										}
 										listeners.onRead = null;
 										listeners.onReadTimeout = 0;
+										dataReceived(tcp, buffer, nb, key.channel());
 									}
 								} else {
 									UDPReceiver udp = (UDPReceiver)receiver;
 									SocketAddress source = ((DatagramChannel)key.channel()).receive(buffer);
-									dataReceived(udp, buffer, source);
 									try {
 										int iops = key.interestOps();
 										key.interestOps(iops - (iops & SelectionKey.OP_READ));
@@ -376,6 +382,7 @@ public class NetworkManager implements Closeable {
 									} catch (CancelledKeyException e) {
 										/* ignore */
 									}
+									dataReceived(udp, buffer, source);
 								}
 							} catch (Exception e) {
 								if (logger.error() && !(e instanceof IOException))
@@ -484,8 +491,10 @@ public class NetworkManager implements Closeable {
 					req.result.unblockSuccess(key);
 					return;
 				}
-				if (logger.error()) logger.error("Operation " + req.newOps + " already registered on " + req.channel);
-				req.result.unblockError(new IOException("Operation already registered"));
+				IOException error = new IOException("Operation " + req.newOps + " already registered on " + req.channel,
+					req.registerStack);
+				if (logger.error()) logger.error("Operation already registered", error);
+				req.result.unblockError(error);
 				try {
 					if ((conflict & SelectionKey.OP_ACCEPT) != 0)
 						acceptError((Server)req.listener,

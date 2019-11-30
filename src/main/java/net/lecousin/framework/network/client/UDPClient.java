@@ -58,10 +58,10 @@ public class UDPClient implements Closeable {
 					}
 				} catch (IOException e) {
 					// error while sending data, just skip it
-					if (bufToSend.getValue2() != null) bufToSend.getValue2().error(e);
 					synchronized (toSend) {
 						if (!toSend.isEmpty()) toSend.removeFirst();
 					}
+					if (bufToSend.getValue2() != null) bufToSend.getValue2().error(e);
 					continue;
 				}
 				if (nb == 0) {
@@ -70,12 +70,12 @@ public class UDPClient implements Closeable {
 					break;
 				}
 				if (!bufToSend.getValue1().hasRemaining()) {
-					if (bufToSend.getValue2() != null)
-						bufToSend.getValue2().unblock();
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					if (bufToSend.getValue2() != null)
+						bufToSend.getValue2().unblock();
 				}
 			}
 			if (!needsMore) {

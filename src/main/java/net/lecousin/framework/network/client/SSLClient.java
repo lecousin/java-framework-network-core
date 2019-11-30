@@ -16,6 +16,7 @@ import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.exception.NoException;
@@ -39,7 +40,7 @@ public class SSLClient extends TCPClient {
 	}
 	
 	private SSLLayer ssl;
-	private TurnArray<ByteBuffer> receivedData = new TurnArray<>(5);
+	private final TurnArray<ByteBuffer> receivedData = new TurnArray<>(5);
 
 	private static final String CONNECT_ATTRIBUTE = "sslclient.connect";
 	private static final String WAITING_DATA_ATTRIBUTE = "sslclient.waitfordata";
@@ -54,7 +55,7 @@ public class SSLClient extends TCPClient {
 		ssl.setHostNames(hostNames);
 	}
 	
-	private SSLLayer.TCPConnection sslClient = new SSLLayer.TCPConnection() {
+	private final SSLLayer.TCPConnection sslClient = new SSLLayer.TCPConnection() {
 		
 		@Override
 		public Object getAttribute(String name) {
@@ -115,7 +116,7 @@ public class SSLClient extends TCPClient {
 			AsyncSupplier<ByteBuffer, IOException> waiting;
 			ByteBuffer buffer;
 			Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> waitAgain = null;
-			synchronized (this) {
+			synchronized (sslClient) {
 				LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>> list =
 					(LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>>)
 					getAttribute(WAITING_DATA_ATTRIBUTE);
@@ -165,9 +166,30 @@ public class SSLClient extends TCPClient {
 	
 	@Override
 	protected void channelClosed() {
+		cancelPendingWaitingData();
 		if (closed) return;
 		super.channelClosed();
 		sslClient.closed();
+	}
+	
+	@Override
+	public void close() {
+		cancelPendingWaitingData();
+		super.close();
+	}
+	
+	@SuppressWarnings("unchecked")
+	protected void cancelPendingWaitingData() {
+		LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>> list;
+		synchronized (sslClient) {
+			list = (LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>>)
+				removeAttribute(WAITING_DATA_ATTRIBUTE);
+		}
+		if (list != null) {
+			logger.debug("Cancel SSL Client pending read operations as client has been closed");
+			for (Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> t : list)
+				t.getValue1().cancel(new CancelException("Client was closed"));
+		}
 	}
 	
 	@Override
@@ -318,4 +340,9 @@ public class SSLClient extends TCPClient {
 		return result;
 	}
 	
+	
+	@Override
+	public String toString() {
+		return "SSLClient [" + channel + "]";
+	}
 }

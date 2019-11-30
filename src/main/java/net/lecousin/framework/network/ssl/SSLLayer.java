@@ -360,18 +360,20 @@ public class SSLLayer {
 			try { result = engine.unwrap(inputBuffer, dst); }
 			catch (SSLException e) {
 				if (logger.error())
-					logger.error("Error decrypting data from SSL connection", e);
+					logger.error("Error decrypting data from SSL connection " + conn, e);
 				conn.close();
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
+				if (logger.debug())
+					logger.debug("Not enough data to decrypt, wait for new data from SSL connection " + conn
+						+ ", " + buffers.size() + " buffer(s) decrypted");
+				inputBuffer.compact();
 				if (!buffers.isEmpty())
 					conn.dataReceived(buffers);
-				if (logger.debug())
-					logger.debug("Not enough data to decrypt, wait for new data from SSL connection " + conn);
-				inputBuffer.compact();
-				try { conn.waitForData(inputBuffer.capacity(), timeout); }
-				catch (ClosedChannelException e) { conn.closed(); }
+				else
+					try { conn.waitForData(inputBuffer.capacity(), timeout); }
+					catch (ClosedChannelException e) { conn.closed(); }
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
@@ -428,6 +430,8 @@ public class SSLLayer {
 			if (!data.hasRemaining())
 				break;
 		} while (true);
+		if (logger.debug())
+			logger.debug("Data encrypted to send on SSL connection " + conn + ": " + buffers.size() + " buffer(s)");
 		return buffers;
 	}
 

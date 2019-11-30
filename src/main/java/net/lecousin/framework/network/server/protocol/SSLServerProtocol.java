@@ -32,6 +32,10 @@ public class SSLServerProtocol implements ServerProtocol {
 	private SSLLayer ssl;
 	private ServerProtocol protocol;
 	
+	public ServerProtocol getInnerProtocol() {
+		return protocol;
+	}
+	
 	private class Client implements SSLLayer.TCPConnection {
 		
 		public Client(TCPServerClient client) {

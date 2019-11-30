@@ -132,7 +132,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			logger.debug("Client end of input");
 			buffer.flip();
 			endOfInput = true;
-			reading.unblockSuccess(buffer);
+			reading.unblockSuccess(buffer.hasRemaining() ? buffer : null);
 		}
 	}
 	
@@ -409,12 +409,12 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 				if (logger.debug())
 					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
 				if (p.getValue1().remaining() == 0) {
-					if (p.getValue2() != null)
-						p.getValue2().unblock();
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					if (p.getValue2() != null)
+						p.getValue2().unblock();
 					continue;
 				}
 				int nb;
@@ -422,11 +422,13 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					nb = channel.write(p.getValue1());
 				} catch (IOException e) {
 					// error while sending data, just skip it
-					if (p.getValue2() != null) p.getValue2().error(e);
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					if (logger.debug())
+						logger.debug("Data not sent", e);
+					if (p.getValue2() != null) p.getValue2().error(e);
 					continue;
 				}
 				if (logger.debug())
@@ -437,12 +439,12 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					break;
 				}
 				if (!p.getValue1().hasRemaining()) {
-					if (p.getValue2() != null)
-						p.getValue2().unblock();
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					if (p.getValue2() != null)
+						p.getValue2().unblock();
 				}
 			}
 			if (!needsMore) {

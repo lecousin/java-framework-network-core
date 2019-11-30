@@ -14,7 +14,7 @@ import net.lecousin.framework.network.security.BruteForceAttempt;
 import net.lecousin.framework.network.security.IPBlackList;
 import net.lecousin.framework.network.security.NetworkSecurity;
 import net.lecousin.framework.network.server.TCPServer;
-import net.lecousin.framework.network.tests.TestTCP.TestProtocol;
+import net.lecousin.framework.network.tests.tcp.WelcomeProtocol;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -34,7 +34,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 	@Test
 	public void testBlockIP() throws Exception {
 		TCPServer server = new TCPServer();
-		server.setProtocol(new TestProtocol());
+		server.setProtocol(new WelcomeProtocol());
 		SocketAddress serverAddressIPv4 = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		Inet6Address ipv6 = NetUtil.getLoopbackIPv6Address();
 		SocketAddress serverAddressIPv6 = ipv6 != null ? server.bind(new InetSocketAddress(ipv6, 0), 0).blockResult(0) : null;
