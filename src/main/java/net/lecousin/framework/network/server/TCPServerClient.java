@@ -7,40 +7,26 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.function.Supplier;
 
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.IAsync;
-import net.lecousin.framework.network.AttributesContainer;
+import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.TCPRemote;
 
 /**
  * A client connected to a {@link TCPServer}.
  */
-public class TCPServerClient implements AttributesContainer, Closeable, TCPRemote {
+public class TCPServerClient extends AbstractAttributesContainer implements Closeable, TCPRemote {
 
 	TCPServerClient(TCPServer.Client privateInterface) {
 		this.privateInterface = privateInterface;
 	}
 	
 	private TCPServer.Client privateInterface;
-	private HashMap<String,Object> attributes = new HashMap<>(20);
 	ArrayList<AutoCloseable> toClose = new ArrayList<>();
 	LinkedList<IAsync<?>> pending = new LinkedList<>();
-	
-	@Override
-	public void setAttribute(String key, Object value) { attributes.put(key, value); }
-	
-	@Override
-	public Object getAttribute(String key) { return attributes.get(key); }
-	
-	@Override
-	public Object removeAttribute(String key) { return attributes.remove(key); }
-	
-	@Override
-	public boolean hasAttribute(String name) { return attributes.containsKey(name); }
 	
 	/** Signal we are expecting data from this client.
 	 * @param timeout timeout in milliseconds

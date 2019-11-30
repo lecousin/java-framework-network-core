@@ -382,12 +382,7 @@ public class NetworkManager implements Closeable {
 									logger.error("Error while receiving data from network on "
 										+ key.channel().toString(), e);
 								receiveError(receiver, e, buffer);
-								try { key.interestOps(0); }
-								catch (CancelledKeyException e2) { /* ignore */ }
-								catch (Exception t) { logger.error("Error", t); }
-								listeners.reset();
-								try { key.channel().close(); }
-								catch (Exception t) { /* ignore */ }
+								resetAndClose(key);
 								channelClosed(receiver);
 							}
 						}
@@ -535,12 +530,7 @@ public class NetworkManager implements Closeable {
 					if (now > listeners.readStart + listeners.onReadTimeout) {
 						receiveError(listeners.onRead,
 							new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
-						try { key.interestOps(0); }
-						catch (CancelledKeyException e2) { /* ignore */ }
-						catch (Exception t) { logger.error("Error", t); }
-						listeners.reset();
-						try { key.channel().close(); }
-						catch (Exception t) { /* ignore */ }
+						resetAndClose(key);
 						continue;
 					}
 					if (listeners.readStart + listeners.onReadTimeout > nextTimeout)
@@ -561,6 +551,15 @@ public class NetworkManager implements Closeable {
 				}
 			}
 			return nextTimeout;
+		}
+		
+		private void resetAndClose(SelectionKey key) {
+			try { key.interestOps(0); }
+			catch (CancelledKeyException e2) { /* ignore */ }
+			catch (Exception t) { logger.error("Error", t); }
+			((Attachment)key.attachment()).reset();
+			try { key.channel().close(); }
+			catch (Exception t) { /* ignore */ }
 		}
 		
 		private void acceptClient(Server server, SocketChannel client) {

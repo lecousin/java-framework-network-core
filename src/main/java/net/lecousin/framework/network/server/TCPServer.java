@@ -2,7 +2,6 @@ package net.lecousin.framework.network.server;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
@@ -11,11 +10,8 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.function.Supplier;
 
-import net.lecousin.framework.application.Application;
-import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
@@ -33,19 +29,9 @@ import net.lecousin.framework.util.Pair;
  * Each connected client is represented by a {@link TCPServerClient}.<br/>
  * It uses the {@link NetworkManager} to perform asynchronous operations.
  */
-public class TCPServer implements Closeable {
+public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.ServerChannel> {
 
-	/** Constructor. */
-	public TCPServer() {
-		app = LCCore.getApplication();
-		manager = NetworkManager.get(app);
-		app.toClose(this);
-	}
-	
-	protected Application app;
-	protected NetworkManager manager;
 	protected ServerProtocol protocol;
-	protected ArrayList<ServerChannel> channels = new ArrayList<>();
 	protected ArrayList<Client> clients = new ArrayList<>();
 	
 	public ServerProtocol getProtocol() {
@@ -56,14 +42,16 @@ public class TCPServer implements Closeable {
 		this.protocol = protocol;
 	}
 	
-	/** Return the list of addresses this server listens to. */
-	@SuppressWarnings("squid:S1319") // return ArrayList instead of List
-	public ArrayList<InetSocketAddress> getLocalAddresses() {
-		ArrayList<InetSocketAddress> addresses = new ArrayList<>(channels.size());
-		for (ServerChannel channel : channels)
-			try { addresses.add((InetSocketAddress)channel.channel.getLocalAddress()); }
-			catch (Exception e) { /* ignore */ }
-		return addresses;
+	@Override
+	public void unbindAll() {
+		super.unbindAll();
+		ArrayList<Client> list;
+		synchronized (clients) {
+			list = new ArrayList<>(clients);
+			clients.clear();
+		}
+		for (Client client : list)
+			client.close();
 	}
 	
 	/** Return a list of currently connected clients. */
@@ -74,12 +62,6 @@ public class TCPServer implements Closeable {
 			list = new ArrayList<>(clients);
 		}
 		return list;
-	}
-	
-	@Override
-	public void close() {
-		unbindAll();
-		app.closed(this);
 	}
 	
 	/** Listen to the given address, with the given backlog.
@@ -99,53 +81,17 @@ public class TCPServer implements Closeable {
 			}
 			ServerChannel sc = new ServerChannel(channel);
 			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
-			accept.thenStart(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
-				sc.key = accept.getResult();
-				channels.add(sc);
-				try {
-					SocketAddress addr = channel.getLocalAddress();
-					if (manager.getLogger().info())
-						manager.getLogger().info("New TCP server listening at " + addr.toString());
-					result.unblockSuccess(addr);
-				} catch (IOException e) {
-					result.error(e);
-				}
-			}), result);
+			finalizeBinding(accept, sc, channel, result);
 		}).start();
 		return result;
 	}
 	
-	/** Stop listening to all ports and addresses. */
-	public void unbindAll() {
-		List<IAsync<IOException>> sp = new LinkedList<>();
-		for (ServerChannel channel : channels) {
-			if (manager.getLogger().info())
-				manager.getLogger().info("Closing TCP server: " + channel.channel.toString());
-			channel.key.cancel();
-			try { channel.channel.close(); }
-			catch (IOException e) { manager.getLogger().error("Error closing TCP server", e); }
-			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
-		}
-		for (IAsync<IOException> s : sp)
-			s.block(5000);
-		channels.clear();
-		ArrayList<Client> list;
-		synchronized (clients) {
-			list = new ArrayList<>(clients);
-			clients.clear();
-		}
-		for (Client client : list)
-			client.close();
-	}
-	
-	private class ServerChannel implements NetworkManager.Server {
+	/** Internal listening channel. */
+	protected class ServerChannel extends AbstractServer.AbstractServerChannel<ServerSocketChannel> implements NetworkManager.Server {
 		private ServerChannel(ServerSocketChannel channel) {
-			this.channel = channel;
+			super(channel);
 		}
 		
-		private ServerSocketChannel channel;
-		private SelectionKey key;
-
 		@SuppressWarnings("resource")
 		@Override
 		public void newClient(SocketChannel client) {

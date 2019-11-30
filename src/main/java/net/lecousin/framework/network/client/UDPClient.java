@@ -45,20 +45,20 @@ public class UDPClient implements Closeable {
 		public void readyToSend() {
 			boolean needsMore = false; 
 			while (true) {
-				Pair<ByteBuffer, Async<IOException>> p;
+				Pair<ByteBuffer, Async<IOException>> bufToSend;
 				synchronized (toSend) {
 					if (toSend.isEmpty()) break;
-					p = toSend.getFirst();
+					bufToSend = toSend.getFirst();
 				}
 				int nb;
 				try {
 					synchronized (UDPClient.this) {
 						if (channel == null) throw new ClosedChannelException();
-						nb = channel.send(p.getValue1(), target);
+						nb = channel.send(bufToSend.getValue1(), target);
 					}
 				} catch (IOException e) {
 					// error while sending data, just skip it
-					if (p.getValue2() != null) p.getValue2().error(e);
+					if (bufToSend.getValue2() != null) bufToSend.getValue2().error(e);
 					synchronized (toSend) {
 						if (!toSend.isEmpty()) toSend.removeFirst();
 					}
@@ -69,9 +69,9 @@ public class UDPClient implements Closeable {
 					needsMore = true;
 					break;
 				}
-				if (!p.getValue1().hasRemaining()) {
-					if (p.getValue2() != null)
-						p.getValue2().unblock();
+				if (!bufToSend.getValue1().hasRemaining()) {
+					if (bufToSend.getValue2() != null)
+						bufToSend.getValue2().unblock();
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
 							toSend.removeFirst();

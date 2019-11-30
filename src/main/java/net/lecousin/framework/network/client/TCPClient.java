@@ -7,7 +7,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -24,7 +23,7 @@ import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.IOUtil;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger;
-import net.lecousin.framework.network.AttributesContainer;
+import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.TCPRemote;
@@ -35,7 +34,7 @@ import net.lecousin.framework.util.Pair;
  * TCP client, connected to a server using TCP protocol (using sockets).
  * It uses the {@link NetworkManager} to make asynchronous operations.<br/>
  */
-public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
+public class TCPClient extends AbstractAttributesContainer implements Closeable, TCPRemote {
 	
 	/** Constcutor. */
 	public TCPClient() {
@@ -50,23 +49,10 @@ public class TCPClient implements AttributesContainer, Closeable, TCPRemote {
 	protected boolean closed = true;
 	protected Async<IOException> spConnect;
 	protected boolean endOfInput = false;
-	private HashMap<String,Object> attributes = new HashMap<>(20);
 	private SimpleEvent onclosed = new SimpleEvent();
 	private Supplier<ByteBuffer> dataToSendProvider = null;
 	private Async<IOException> dataToSendSP = null;
 
-	@Override
-	public void setAttribute(String key, Object value) { attributes.put(key, value); }
-	
-	@Override
-	public Object getAttribute(String key) { return attributes.get(key); }
-	
-	@Override
-	public Object removeAttribute(String key) { return attributes.remove(key); }
-	
-	@Override
-	public boolean hasAttribute(String name) { return attributes.containsKey(name); }
-	
 	@Override
 	public SocketAddress getLocalAddress() throws IOException {
 		return channel.getLocalAddress();

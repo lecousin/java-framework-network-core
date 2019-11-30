@@ -1,21 +1,14 @@
 package net.lecousin.framework.network.server;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
 
-import net.lecousin.framework.application.Application;
-import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
@@ -24,20 +17,14 @@ import net.lecousin.framework.util.Pair;
  * A server can listen to several IP addresses and ports.<br/>
  * It uses the {@link NetworkManager} to perform asynchronous operations.
  */
-public class UDPServer implements Closeable {
+public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel> {
 
 	/** Constructor. */
 	public UDPServer(int receiveBufferSize, MessageListener messageListener) {
-		app = LCCore.getApplication();
-		manager = NetworkManager.get(app);
-		app.toClose(this);
 		this.receiveBufferSize = receiveBufferSize;
 		this.messageListener = messageListener;
 	}
 	
-	protected Application app;
-	protected NetworkManager manager;
-	protected ArrayList<Channel> channels = new ArrayList<>();
 	protected int receiveBufferSize;
 	protected MessageListener messageListener;
 	
@@ -51,26 +38,6 @@ public class UDPServer implements Closeable {
 	public static interface MessageSender {
 		/** Method to call to send a reply to a client. */
 		void reply(ByteBuffer reply);
-	}
-	
-	@Override
-	public void close() {
-		List<IAsync<IOException>> sp = new LinkedList<>();
-		for (Channel channel : channels) {
-			if (manager.getLogger().info())
-				manager.getLogger().info("Closing UDP server: " + channel.channel.toString());
-			channel.key.cancel();
-			try { channel.channel.close(); }
-			catch (IOException e) {
-				if (manager.getLogger().error())
-					manager.getLogger().error("Error closing UDP server", e);
-			}
-			sp.add(NetworkManager.get().register(channel.channel, 0, null, 0));
-		}
-		for (IAsync<IOException> s : sp)
-			s.block(5000);
-		channels.clear();
-		app.closed(this);
 	}
 	
 	/** Listen to the given address. */
@@ -88,31 +55,18 @@ public class UDPServer implements Closeable {
 			}
 			Channel c = new Channel(channel);
 			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_READ, c, 0);
-			accept.thenStart(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
-				c.key = accept.getResult();
-				channels.add(c);
-				try {
-					SocketAddress addr = channel.getLocalAddress();
-					if (manager.getLogger().info())
-						manager.getLogger().info("New UDP server listening at " + addr.toString());
-					result.unblockSuccess(addr);
-				} catch (IOException e) {
-					result.error(e);
-				}
-			}), result);
+			finalizeBinding(accept, c, channel, result);
 		}).start();
 		return result;
 	}
 	
 	/** A channel the server is listening to. */
-	protected class Channel implements NetworkManager.UDPReceiver, NetworkManager.Sender {
+	protected class Channel extends AbstractServer.AbstractServerChannel<DatagramChannel>
+	implements NetworkManager.UDPReceiver, NetworkManager.Sender {
 
 		protected Channel(DatagramChannel channel) {
-			this.channel = channel;
+			super(channel);
 		}
-		
-		protected DatagramChannel channel;
-		protected SelectionKey key;
 		
 		@Override
 		public void channelClosed() {

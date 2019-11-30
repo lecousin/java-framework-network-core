@@ -132,26 +132,9 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					map = new HashMap<>(5);
 					ipv4.put(functionality, map);
 				}
-				Attempt a = map.get(ip);
-				if (a == null) {
-					a = new Attempt();
-					a.attempts = 1;
-					a.lastTime = System.currentTimeMillis();
-					a.lastValue = value;
-					map.put(ip, a);
+				Attempt a = attempt(map, ip, value);
+				if (a == null)
 					return;
-				}
-				if (System.currentTimeMillis() - a.lastTime > attackDelay) {
-					a.lastTime = System.currentTimeMillis();
-					a.lastValue = value;
-					a.attempts = 1;
-					return;
-				}
-
-				a.lastTime = System.currentTimeMillis();
-				if (a.lastValue.equals(value))
-					return;
-				a.lastValue = value;
 				if (++a.attempts >= attackMaxAttempts)
 					bl = true;
 			}
@@ -169,31 +152,39 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					map.put(ip1, mapIp);
 				}
 				Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
-				Attempt a = mapIp.get(ip2);
-				if (a == null) {
-					a = new Attempt();
-					a.attempts = 1;
-					a.lastTime = System.currentTimeMillis();
-					a.lastValue = value;
-					mapIp.put(ip2, a);
+				Attempt a = attempt(mapIp, ip2, value);
+				if (a == null)
 					return;
-				}
-				if (System.currentTimeMillis() - a.lastTime > attackDelay) {
-					a.lastTime = System.currentTimeMillis();
-					a.lastValue = value;
-					a.attempts = 1;
-					return;
-				}
-				a.lastTime = System.currentTimeMillis();
-				if (a.lastValue.equals(value))
-					return;
-				a.lastValue = value;
 				if (++a.attempts >= attackMaxAttempts)
 					bl = true;
 			}
 		}
 		if (bl)
 			security.getFeature(IPBlackList.class).blacklist(IP_BLACKLIST_CATEGORY, address, attackBlackListTime);
+	}
+	
+	private <T> Attempt attempt(Map<T, Attempt> map, T ip, String value) {
+		Attempt a = map.get(ip);
+		if (a == null) {
+			a = new Attempt();
+			a.attempts = 1;
+			a.lastTime = System.currentTimeMillis();
+			a.lastValue = value;
+			map.put(ip, a);
+			return null;
+		}
+		if (System.currentTimeMillis() - a.lastTime > attackDelay) {
+			a.lastTime = System.currentTimeMillis();
+			a.lastValue = value;
+			a.attempts = 1;
+			return null;
+		}
+
+		a.lastTime = System.currentTimeMillis();
+		if (a.lastValue.equals(value))
+			return null;
+		a.lastValue = value;
+		return a;
 	}
 	
 	/** Signal an attempt from the given client. */
