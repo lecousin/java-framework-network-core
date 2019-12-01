@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
 
 import net.lecousin.framework.application.LCCore;
@@ -106,8 +107,8 @@ public class TestUDP extends AbstractNetworkTest {
 			client.close();
 			try {
 				last.blockThrow(15000);
-			} catch (CancelException e) {
-				// ok
+			} catch (Exception e) {
+				Assert.assertTrue((e instanceof CancelException) || (e instanceof ClosedChannelException));
 			}
 		} finally {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);

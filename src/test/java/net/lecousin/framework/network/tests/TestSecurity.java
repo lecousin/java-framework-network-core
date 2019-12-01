@@ -183,9 +183,9 @@ public class TestSecurity extends LCCoreAbstractTest {
 	@Test
 	public void testLoadConfiguration() throws Exception {
 		Application app = LCCore.getApplication();
-		app.setProperty(BruteForceAttempt.PROPERTY_DELAY_KEEP_ATTEMPT, "5");
+		app.setProperty(BruteForceAttempt.PROPERTY_DELAY_KEEP_ATTEMPT, "100");
 		app.setProperty(BruteForceAttempt.PROPERTY_MAX_ATTEMPTS, "1");
-		app.setProperty(BruteForceAttempt.PROPERTY_BLACK_LIST_DELAY, "5");
+		app.setProperty(BruteForceAttempt.PROPERTY_BLACK_LIST_DELAY, "100");
 		Map<Class<?>, Object> instances = new HashMap<>();
 		JoinPoint<Exception> jp = new JoinPoint<>();
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
@@ -211,7 +211,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertTrue(bl.acceptAddress(ipv4));
 		bf.attempt(ipv4, "test", "test");
 		Assert.assertFalse(bl.acceptAddress(ipv4));
-		Thread.sleep(10);
+		Thread.sleep(200);
 		Assert.assertTrue(bl.acceptAddress(ipv4));
 		bf.attempt(ipv4, "test", "test");
 		Assert.assertFalse(bl.acceptAddress(ipv4));
