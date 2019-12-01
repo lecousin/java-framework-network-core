@@ -86,7 +86,40 @@ public class TestUDP extends AbstractNetworkTest {
 		}
 	}
 	
-	@SuppressWarnings("resource")
+	@Test
+	public void testClientInvalidAddress() throws Exception {
+		// send data
+		UDPClient client = new UDPClient(new InetSocketAddress("0.0.0.1", 80));
+		Async<IOException> sp = new Async<>();
+		client.send(ByteBuffer.wrap(new byte[] { 't', 'e', 's', 't' }), sp);
+		sp.block(10000);
+		Assert.assertTrue(sp.hasError());
+		client.close();
+		
+		// receive data
+		client = new UDPClient(new InetSocketAddress("0.0.0.1", 80));
+		ByteBuffer buf = ByteBuffer.allocate(512);
+		Async<IOException> sp2 = new Async<>();
+		client.waitForAnswer(buf, new UDPClient.AnswerListener() {
+			@Override
+			public void timeout() {
+				sp2.error(new IOException("Timeout"));
+			}
+			@Override
+			public void error(IOException error) {
+				sp2.error(error);
+			}
+			@Override
+			public ByteBuffer dataReceived(ByteBuffer reply) {
+				sp2.unblock();
+				return null;
+			}
+		}, 5000);
+		sp2.block(10000);
+		Assert.assertTrue(sp2.hasError());
+		client.close();
+	}
+	
 	private static void send(byte[] message) throws Exception {
 		DatagramChannel channel = DatagramChannel.open();
 		channel.send(ByteBuffer.wrap(message), serverAddress);
@@ -102,7 +135,6 @@ public class TestUDP extends AbstractNetworkTest {
 		channel.close();
 	}
 
-	@SuppressWarnings("resource")
 	private static Async<IOException> sendClient(byte[] message) {
 		UDPClient client = new UDPClient(serverAddress);
 		client.send(ByteBuffer.wrap(message), null);

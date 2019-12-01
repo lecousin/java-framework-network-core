@@ -23,6 +23,7 @@ import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.IOUtil;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.mutable.MutableInteger;
 import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -212,34 +213,39 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		 */
 		public AsyncSupplier<byte[],IOException> readBytes(int nbBytes, int timeout) {
 			AsyncSupplier<byte[],IOException> res = new AsyncSupplier<>();
-			ByteBuffer buf = ByteBuffer.allocate(nbBytes);
+			byte[] buf = new byte[nbBytes];
+			MutableInteger pos = new MutableInteger(0);
 			if (remainingRead != null) {
-				buf.put(remainingRead);
+				int len = Math.min(nbBytes, remainingRead.remaining());
+				remainingRead.get(buf, 0, len);
 				if (!remainingRead.hasRemaining())
 					remainingRead = null;
-				if (!buf.hasRemaining()) {
-					res.unblockSuccess(buf.array());
+				if (len == nbBytes) {
+					res.unblockSuccess(buf);
 					return res;
 				}
+				pos.set(len);
 			}
-			client.receiveData(buf.remaining(), timeout).listen(
+			client.receiveData(nbBytes - pos.get(), timeout).listen(
 				new IOUtil.RecursiveAsyncSupplierListener<ByteBuffer>((result, that) -> {
 					if (result == null) {
-						res.unblockError(new IOException("End of data after " + buf.position()
+						res.unblockError(new IOException("End of data after " + pos.get()
 							+ " bytes while waiting for " + nbBytes + " bytes"));
 						return;
 					}
 					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
 						@Override
 						public Void run() {
-							buf.put(result);
+							int len = Math.min(result.remaining(), nbBytes - pos.get());
+							result.get(buf, pos.get(), len);
 							if (result.hasRemaining())
 								remainingRead = result;
-							if (!buf.hasRemaining()) {
-								res.unblockSuccess(buf.array());
+							pos.add(len);
+							if (pos.get() == nbBytes) {
+								res.unblockSuccess(buf);
 								return null;
 							}
-							client.receiveData(buf.remaining(), timeout).listen(that);
+							client.receiveData(nbBytes - pos.get(), timeout).listen(that);
 							return null;
 						}
 					}.start();

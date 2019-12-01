@@ -12,6 +12,7 @@ import java.util.ArrayList;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.mutable.MutableBoolean;
@@ -135,7 +136,49 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
+	
+	@Test
+	public void testClientReceiverReadForEverWithRemainingData() throws Exception {
+		TCPClient client = connectClient();
+		StringBuilder received = new StringBuilder();
+		client.getReceiver().readBytes(1, 10000).blockResult(0);
+		Async<Exception> spReceived = new Async<>();
+		client.getReceiver().readForEver(256, 0, (data) -> {
+			while (data.hasRemaining())
+				received.append((char)data.get());
+			if (received.toString().endsWith("Hello Message 2\n"))
+				spReceived.unblock();
+		}, true);
+		sendLine(client, "I'm Message 1");
+		sendLine(client, "I'm Message 2");
+		spReceived.block(10000);
+		client.close();
+	}
 
+	@Test
+	public void testClientReceiverReadForEverWithPartialFirstRead() throws Exception {
+		TCPClient client = connectClient();
+		StringBuilder received = new StringBuilder();
+		Async<Exception> spReceived = new Async<>();
+		client.getReceiver().readForEver(256, 0, (data) -> {
+			if (received.length() == 0) {
+				int len = data.remaining();
+				if (len > 1) len--;
+				for (int i = 0; i < len; ++i)
+					received.append((char)data.get());
+			} else
+				while (data.hasRemaining())
+					received.append((char)data.get());
+			if (received.toString().endsWith("Hello Message 2\n"))
+				spReceived.unblock();
+		}, true);
+		sendLine(client, "I'm Message 1");
+		sendLine(client, "I'm Message 2");
+		spReceived.block(10000);
+		Assert.assertEquals("Welcome\nHello Message 1\nHello Message 2\n", received.toString());
+		client.close();
+	}
+	
 	@Test
 	public void testFloodMe() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
@@ -189,6 +232,45 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		client.close();
 		
 		Assert.assertEquals(0, server.getConnectedClients().size());
+	}
+	
+	@Test
+	public void testClientReceiverReadAvailableBytesWithRemainingBytes() throws Exception {
+		TCPClient client = connectClient();
+		Assert.assertArrayEquals(new byte[] { 'W' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		byte[] remaining = new byte[] { 'e', 'l', 'c', 'o', 'm', 'e', '\n' };
+		int pos = 0;
+		while (pos < remaining.length) {
+			ByteBuffer b = client.getReceiver().readAvailableBytes(1024, 10000).blockResult(0);
+			while (b.hasRemaining()) {
+				Assert.assertEquals(remaining[pos++], b.get());
+			}
+		}
+		client.close();
+	}
+	
+	@Test
+	public void testClientReceiverReadUntilWithRemainingBytes() throws Exception {
+		TCPClient client = connectClient();
+		Assert.assertArrayEquals(new byte[] { 'W' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		ByteArrayIO io = client.getReceiver().readUntil((byte)'\n', 256, 10000).blockResult(0);
+		byte[] remaining = new byte[] { 'e', 'l', 'c', 'o', 'm', 'e' };
+		int pos = 0;
+		while (pos < remaining.length) {
+			Assert.assertEquals(remaining[pos++], io.read());
+		}
+		Assert.assertEquals(-1, io.read());
+		client.close();
+	}
+	
+	@Test
+	public void testClientReceiverReadByteByByte() throws Exception {
+		TCPClient client = connectClient();
+		byte[] remaining = new byte[] { 'W', 'e', 'l', 'c', 'o', 'm', 'e', '\n' };
+		for (int pos = 0; pos < remaining.length; ++pos) {
+			Assert.assertEquals(remaining[pos], client.getReceiver().readBytes(1, 10000).blockResult(0)[0]);
+		}
+		client.close();
 	}
 
 }

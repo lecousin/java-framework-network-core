@@ -102,6 +102,7 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 			client.close();
 			throw e;
 		}
+		client.toString();
 		return client;
 	}
 	
