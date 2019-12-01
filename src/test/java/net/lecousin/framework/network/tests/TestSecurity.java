@@ -126,6 +126,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		BruteForceAttempt bf = security.getFeature(BruteForceAttempt.class);
 		IPBlackList bl = security.getFeature(IPBlackList.class);
 		InetAddress ipv4 = InetAddress.getByAddress(new byte[] { 4, 3, 2, 1 });
+		bf.clearAll();
 		bl.clearAll();
 		Assert.assertTrue(bl.acceptAddress(ipv4));
 		bf.attempt(ipv4, "test", "test");
@@ -156,6 +157,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		bl.clearCategory(BruteForceAttempt.IP_BLACKLIST_CATEGORY);
 		bl.clearCategory("does not exist");
 		bl.clearAll();
+		bf.clearAll();
 
 		InetAddress ipv6 = InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
 		Assert.assertTrue(bl.acceptAddress(ipv6));
@@ -185,6 +187,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertFalse(bl.acceptAddress(ipv6));
 		
 		bl.clearAll();
+		bf.clearAll();
 	}
 	
 	@Test

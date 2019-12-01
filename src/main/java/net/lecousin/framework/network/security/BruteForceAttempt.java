@@ -199,6 +199,13 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 		}
 	}
 	
+	/** Clear all attempts. */
+	public void clearAll() {
+		ipv4.clear();
+		ipv6.clear();
+		updated = true;
+	}
+	
 	@Override
 	public void clean() {
 		synchronized (this) {
