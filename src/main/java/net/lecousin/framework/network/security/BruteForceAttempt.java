@@ -1,6 +1,5 @@
 package net.lecousin.framework.network.security;
 
-import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
