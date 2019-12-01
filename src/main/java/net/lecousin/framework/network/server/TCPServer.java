@@ -9,6 +9,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.function.Supplier;
 
@@ -287,9 +288,22 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			synchronized (Client.this) {
 				if (outputBuffers == null || channel == null) return;
 				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
-					outputBuffers.add(new Pair<>(dataToSendProvider.get(), dataToSendSP));
+					Supplier<ByteBuffer> provider = dataToSendProvider;
+					Async<IOException> sp = dataToSendSP;
 					dataToSendProvider = null;
 					dataToSendSP = null;
+					new Task.Cpu.FromRunnable("Prepare data to send from data supplier", Task.PRIORITY_IMPORTANT, () -> {
+						LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
+						if (buffers.isEmpty())
+							sp.unblock();
+						else
+							for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
+								ByteBuffer b = it.next();
+								outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
+							}
+						readyToSend();
+					}).start();
+					return;
 				}
 				while (outputBuffers != null && !outputBuffers.isEmpty()) {
 					try {

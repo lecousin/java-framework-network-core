@@ -139,4 +139,21 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		}
 	}
+	
+	@Test
+	public void testReceiveAndClose() throws Exception {
+		try {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+			TCPClient client = connectClient();
+			// wait few seconds so the server is filling the socket buffer
+			try { Thread.sleep(2000); }
+			catch (InterruptedException e) {}
+			client.getReceiver().readBytes(BLOCK_SIZE, 10000);
+			client.close();
+		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+		}
+	}
 }
