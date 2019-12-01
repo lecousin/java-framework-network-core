@@ -382,6 +382,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 	}
 	
 	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
+	private boolean sending = false;
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
 		public void channelClosed() {
@@ -400,6 +401,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			while (true) {
 				Pair<ByteBuffer, Async<IOException>> p;
 				synchronized (toSend) {
+					sending = true;
 					if (toSend.isEmpty()) {
 						if (dataToSendProvider != null) {
 							p = new Pair<>(dataToSendProvider.get(), dataToSendSP);
@@ -407,6 +409,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 							dataToSendProvider = null;
 							dataToSendSP = null;
 						} else {
+							sending = false;
 							break;
 						}
 					} else {
@@ -454,6 +457,9 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						p.getValue2().unblock();
 				}
 			}
+			synchronized (toSend) {
+				sending = false;
+			}
 			if (!needsMore) {
 				// no more data to send
 				return;
@@ -484,7 +490,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		Async<IOException> sp = new Async<>();
 		synchronized (toSend) {
 			toSend.addLast(new Pair<>(data, sp));
-			if (toSend.size() == 1 && dataToSendProvider == null)
+			if (!sending && toSend.size() == 1 && dataToSendProvider == null)
 				manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
 		}
 		return sp;
