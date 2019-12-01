@@ -17,14 +17,26 @@ Main functionalities:
 ### Current version - branch master
 
 [![Maven Central](https://img.shields.io/maven-central/v/net.lecousin.framework.network/core.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22net.lecousin.framework.network%22%20AND%20a%3A%22core%22)
-[![Javadoc](https://img.shields.io/badge/javadoc-0.5.1-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.5.1)
+[![Javadoc](https://img.shields.io/badge/javadoc-0.6.0-brightgreen.svg)](https://www.javadoc.io/doc/net.lecousin.framework.network/core/0.6.0)
 
 ![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=master "Build Status")
 ![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=master&svg=true "Build Status")
 [![Codecov](https://codecov.io/gh/lecousin/java-framework-network-core/graph/badge.svg)](https://codecov.io/gh/lecousin/java-framework-network-core/branch/master)
+
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=master&metric=alert_status)](https://sonarcloud.io/dashboard?branch=master&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=master&metric=bugs)](https://sonarcloud.io/dashboard?branch=master&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=master&metric=vulnerabilities)](https://sonarcloud.io/dashboard?branch=master&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=master&metric=code_smells)](https://sonarcloud.io/dashboard?branch=master&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=master&metric=coverage)](https://sonarcloud.io/dashboard?branch=master&id=lecousin_java-framework-network-core)
 
 ### Development branch
 
 ![build status](https://travis-ci.org/lecousin/java-framework-network-core.svg?branch=dev "Build Status")
 ![build status](https://ci.appveyor.com/api/projects/status/github/lecousin/java-framework-network-core?branch=dev&svg=true "Build Status")
 [![Codecov](https://codecov.io/gh/lecousin/java-framework-network-core/branch/dev/graph/badge.svg)](https://codecov.io/gh/lecousin/java-framework-network-core/branch/dev)
+
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=dev&metric=alert_status)](https://sonarcloud.io/dashboard?branch=dev&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=dev&metric=bugs)](https://sonarcloud.io/dashboard?branch=dev&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=dev&metric=vulnerabilities)](https://sonarcloud.io/dashboard?branch=dev&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=dev&metric=code_smells)](https://sonarcloud.io/dashboard?branch=dev&id=lecousin_java-framework-network-core)
+[![Sonar](https://sonarcloud.io/api/project_badges/measure?project=lecousin_java-framework-network-core&branch=dev&metric=coverage)](https://sonarcloud.io/dashboard?branch=dev&id=lecousin_java-framework-network-core)
