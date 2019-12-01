@@ -6,7 +6,10 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
+import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
@@ -121,37 +124,97 @@ public class TestSecurity extends LCCoreAbstractTest {
 	@Test
 	public void testBruteForceAttack() throws Exception {
 		BruteForceAttempt bf = security.getFeature(BruteForceAttempt.class);
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), "test", "test");
+		IPBlackList bl = security.getFeature(IPBlackList.class);
+		InetAddress ipv4 = InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 });
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test2");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test3");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test4");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test5");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test6");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test7");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test8");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test9");
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test10");
+		Assert.assertFalse(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test11");
+		Assert.assertFalse(bl.acceptAddress(ipv4));
 
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
-		bf.attempt(InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), "test", "test");
+		InetAddress ipv6 = InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test2");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test3");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test4");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test5");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test6");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test7");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test8");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test9");
+		Assert.assertTrue(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test10");
+		Assert.assertFalse(bl.acceptAddress(ipv6));
+		bf.attempt(ipv6, "test", "test11");
+		Assert.assertFalse(bl.acceptAddress(ipv6));
 	}
 	
 	@Test
 	public void testLoadConfiguration() throws Exception {
+		Application app = LCCore.getApplication();
+		app.setProperty(BruteForceAttempt.PROPERTY_DELAY_KEEP_ATTEMPT, "5");
+		app.setProperty(BruteForceAttempt.PROPERTY_MAX_ATTEMPTS, "1");
+		app.setProperty(BruteForceAttempt.PROPERTY_BLACK_LIST_DELAY, "5");
+		Map<Class<?>, Object> instances = new HashMap<>();
 		JoinPoint<Exception> jp = new JoinPoint<>();
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
-			IO.Readable input = LCCore.getApplication().getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.PRIORITY_NORMAL);
+			IO.Readable input = app.getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.PRIORITY_NORMAL);
 			AsyncSupplier<Object, SerializationException> res =
 				new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
 					new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
 			jp.addToJoin(1);
 			res.onDone(cfg -> {
-				NetworkSecurityFeature instance = plugin.newInstance(LCCore.getApplication(), cfg);
+				NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
 				instance.clean();
+				instances.put(instance.getClass(), instance);
 				jp.joined();
 			}, err -> jp.error(err), cancel -> jp.cancel(cancel));
 			input.closeAfter(res);
 		}
 		jp.start();
 		jp.blockThrow(0);
+		
+		BruteForceAttempt bf = (BruteForceAttempt)instances.get(BruteForceAttempt.class);
+		IPBlackList bl = security.getFeature(IPBlackList.class);
+		InetAddress ipv4 = InetAddress.getByAddress(new byte[] { 1, 1, 1, 1 });
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test");
+		Assert.assertFalse(bl.acceptAddress(ipv4));
+		Thread.sleep(10);
+		Assert.assertTrue(bl.acceptAddress(ipv4));
+		bf.attempt(ipv4, "test", "test");
+		Assert.assertFalse(bl.acceptAddress(ipv4));
 	}
 	
 }

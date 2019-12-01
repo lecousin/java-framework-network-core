@@ -71,11 +71,11 @@ public class IPBlackList implements NetworkSecurityFeature {
 				cat.name = cfgCat.name;
 				if (cfgCat.ipv4 != null)
 					for (Config.IP ip : cfgCat.ipv4) {
-		                int address  = ip.ip[3] & 0xFF;
-		                address |= ((ip.ip[2] << 8) & 0xFF00);
-		                address |= ((ip.ip[1] << 16) & 0xFF0000);
-		                address |= ((ip.ip[0] << 24) & 0xFF000000);
-		                cat.ipv4.put(Integer.valueOf(address), Long.valueOf(ip.expiration));
+						int address  = ip.ip[3] & 0xFF;
+						address |= ((ip.ip[2] << 8) & 0xFF00);
+						address |= ((ip.ip[1] << 16) & 0xFF0000);
+						address |= ((ip.ip[0] << 24) & 0xFF000000);
+						cat.ipv4.put(Integer.valueOf(address), Long.valueOf(ip.expiration));
 					}
 				if (cfgCat.ipv6 != null)
 					for (Config.IP ip : cfgCat.ipv6) {

@@ -21,6 +21,10 @@ import net.lecousin.framework.network.TCPRemote;
  */
 public class BruteForceAttempt implements NetworkSecurityFeature {
 	
+	public static final String PROPERTY_DELAY_KEEP_ATTEMPT = "brute_force_attack.delay";
+	public static final String PROPERTY_MAX_ATTEMPTS = "brute_force_attack.max_attempts";
+	public static final String PROPERTY_BLACK_LIST_DELAY = "brute_force_attack.black_list_delay";
+	
 	/** Plug-in class. */
 	public static class Plugin implements NetworkSecurityPlugin {
 
@@ -73,13 +77,13 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 	}
 		
 	private BruteForceAttempt(Application app, Config cfg) {
-		try { attackDelay = Long.parseLong(app.getProperty("brute_force_attack.delay")); }
+		try { attackDelay = Long.parseLong(app.getProperty(PROPERTY_DELAY_KEEP_ATTEMPT)); }
 		catch (Exception e) { attackDelay = 10L * 60 * 1000; } // default to 10 minutes
 
-		try { attackMaxAttempts = Integer.parseInt(app.getProperty("brute_force_attack.max_attemptes")); }
+		try { attackMaxAttempts = Integer.parseInt(app.getProperty(PROPERTY_MAX_ATTEMPTS)); }
 		catch (Exception e) { attackMaxAttempts = 10; } // default to 10
 		
-		try { attackBlackListTime = Long.parseLong(app.getProperty("brute_force_attack.black_list_delay")); }
+		try { attackBlackListTime = Long.parseLong(app.getProperty(PROPERTY_BLACK_LIST_DELAY)); }
 		catch (Exception e) { attackBlackListTime = 15L * 60 * 1000; } // default to 15 minutes
 		
 		security = NetworkSecurity.get(app);
@@ -167,17 +171,17 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 		Attempt a = map.get(ip);
 		if (a == null) {
 			a = new Attempt();
-			a.attempts = 1;
+			a.attempts = 0;
 			a.lastTime = System.currentTimeMillis();
 			a.lastValue = value;
 			map.put(ip, a);
-			return null;
+			return a;
 		}
 		if (System.currentTimeMillis() - a.lastTime > attackDelay) {
 			a.lastTime = System.currentTimeMillis();
 			a.lastValue = value;
-			a.attempts = 1;
-			return null;
+			a.attempts = 0;
+			return a;
 		}
 
 		a.lastTime = System.currentTimeMillis();

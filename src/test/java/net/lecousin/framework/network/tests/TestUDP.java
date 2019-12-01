@@ -9,6 +9,7 @@ import java.nio.channels.DatagramChannel;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.UDPClient;
@@ -16,9 +17,9 @@ import net.lecousin.framework.network.server.UDPServer;
 import net.lecousin.framework.network.server.UDPServer.MessageSender;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 
-import org.junit.AfterClass;
+import org.junit.After;
 import org.junit.Assert;
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.BlockJUnit4ClassRunner;
@@ -26,11 +27,12 @@ import org.junit.runners.BlockJUnit4ClassRunner;
 @RunWith(BlockJUnit4ClassRunner.class)
 public class TestUDP extends AbstractNetworkTest {
 
-	private static UDPServer server;
-	private static SocketAddress serverAddress;
+	private UDPServer server;
+	private SocketAddress serverAddress;
+	private boolean pauseServer = false;
 	
-	@BeforeClass
-	public static void launchUDPServer() throws Exception {
+	@Before
+	public void launchUDPServer() throws Exception {
 		server = new UDPServer(1024, new UDPServer.MessageListener() {
 			@Override
 			public void newMessage(ByteBuffer message, SocketAddress source, MessageSender reply) {
@@ -38,14 +40,15 @@ public class TestUDP extends AbstractNetworkTest {
 				r.put((byte)51);
 				r.put(message);
 				r.flip();
-				reply.reply(r);
+				if (!pauseServer)
+					reply.reply(r);
 			}
 		});
 		serverAddress = server.bind(new InetSocketAddress("localhost", 0)).blockResult(0);
 	}
 	
-	@AfterClass
-	public static void stopUDPServer() {
+	@After
+	public void stopUDPServer() {
 		server.close();
 	}
 	
@@ -75,6 +78,8 @@ public class TestUDP extends AbstractNetworkTest {
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
 			UDPClient client = new UDPClient(serverAddress);
+			client.send(ByteBuffer.wrap(new byte[0]), null);
+			client.send(ByteBuffer.wrap(new byte[0]), new Async<>());
 			Async<IOException> last = new Async<>();
 			for (int i = 0; i < 1000; ++i)
 				client.send(ByteBuffer.wrap(buf), i == 999 ? last : null);
@@ -83,6 +88,44 @@ public class TestUDP extends AbstractNetworkTest {
 		} finally {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+		}
+	}
+
+	@Test
+	public void testSendManyMessagesAndClose() throws Exception {
+		try {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+			byte[] buf = new byte[32768];
+			for (int i = 0; i < buf.length; ++i)
+				buf[i] = (byte)i;
+			UDPClient client = new UDPClient(serverAddress);
+			Async<IOException> last = new Async<>();
+			for (int i = 0; i < 1000; ++i)
+				client.send(ByteBuffer.wrap(buf), i == 999 ? last : null);
+			client.close();
+			try {
+				last.blockThrow(15000);
+			} catch (CancelException e) {
+				// ok
+			}
+		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
+			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
+		}
+	}
+	
+	@Test
+	public void testPauseAndCloseServer() throws Exception {
+		pauseServer = true;
+		Async<IOException> sp = sendClient(new byte[] { 't', 'e', 's', 't' });
+		Assert.assertFalse(sp.isDone());
+		server.close();
+		try {
+			sp.blockThrow(0);
+			throw new AssertionError("Exception expected when waiting for data and server was closed");
+		} catch (IOException e) {
+			// ok
 		}
 	}
 	
@@ -120,7 +163,7 @@ public class TestUDP extends AbstractNetworkTest {
 		client.close();
 	}
 	
-	private static void send(byte[] message) throws Exception {
+	private void send(byte[] message) throws Exception {
 		DatagramChannel channel = DatagramChannel.open();
 		channel.send(ByteBuffer.wrap(message), serverAddress);
 		byte[] b = new byte[message.length + 100];
@@ -135,7 +178,7 @@ public class TestUDP extends AbstractNetworkTest {
 		channel.close();
 	}
 
-	private static Async<IOException> sendClient(byte[] message) {
+	private Async<IOException> sendClient(byte[] message) {
 		UDPClient client = new UDPClient(serverAddress);
 		client.send(ByteBuffer.wrap(message), null);
 		byte[] b = new byte[message.length + 100];

@@ -1,5 +1,8 @@
 <?xml version="1.1" encoding="UTF-8"?>
 <Plugin xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<attempt attempts="1" lastTime="1517132395435" lastValue="test" functionality="test" ip="1.2.3.4"/>
+	<attempt attempts="1" lastTime="1517132395435" lastValue="test" functionality="test" ip="1.2.3.5"/>
 	<attempt attempts="1" lastTime="1517132395452" lastValue="test" functionality="test" ip="0102:0304:0506:0708:090A:0B0C:0D0E:0F10"/>
+	<attempt attempts="1" lastTime="1517132395452" lastValue="test" functionality="test" ip="0102:0304:0506:0708:090A:0B0C:0D0E:0F11"/>
+	<attempt attempts="1" lastTime="1517132395435" lastValue="test" functionality="test"/>
 </Plugin>
