@@ -98,6 +98,7 @@
 					<configuration>
 						<includes>
 							<include>net/lecousin/framework/network/test/**</include>
+							<include>tests-network-core/ssl/**</include>
 						</includes>
 					</configuration>
 				</execution>
