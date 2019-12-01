@@ -315,7 +315,12 @@ public class NetworkManager implements Closeable {
 							listeners.channelClosed();
 							continue;
 						}
-						int ops = key.readyOps();
+						int ops;
+						try { ops = key.readyOps(); }
+						catch (CancelledKeyException e) {
+							listeners.channelClosed();
+							continue;
+						}
 						if (trace) logger.trace("Ready operation: " + ops + " for " + key.toString());
 						if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 							Server server = listeners.onAccept;
