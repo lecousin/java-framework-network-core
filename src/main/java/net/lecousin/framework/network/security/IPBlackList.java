@@ -254,6 +254,23 @@ public class IPBlackList implements NetworkSecurityFeature {
 		}
 	}
 	
+	/** Remove all black listed IPs in the given category. */
+	public void clearCategory(String category) {
+		for (Category c : categories)
+			if (c.name.contentEquals(category)) {
+				c.ipv4.clear();
+				c.ipv6.clear();
+				updated = true;
+				break;
+			}
+	}
+	
+	/** Remove all black listed IPs. */
+	public void clearAll() {
+		categories.clear();
+		updated = true;
+	}
+	
 	@Override
 	public void clean() {
 		synchronized (this) {
