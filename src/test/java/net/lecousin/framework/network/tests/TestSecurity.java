@@ -125,7 +125,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 	public void testBruteForceAttack() throws Exception {
 		BruteForceAttempt bf = security.getFeature(BruteForceAttempt.class);
 		IPBlackList bl = security.getFeature(IPBlackList.class);
-		InetAddress ipv4 = InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 });
+		InetAddress ipv4 = InetAddress.getByAddress(new byte[] { 4, 3, 2, 1 });
 		Assert.assertTrue(bl.acceptAddress(ipv4));
 		bf.attempt(ipv4, "test", "test");
 		Assert.assertTrue(bl.acceptAddress(ipv4));
