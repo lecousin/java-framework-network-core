@@ -145,8 +145,13 @@ public class SSLClient extends TCPClient {
 		
 		@Override
 		public IAsync<IOException> sendEmpty(ByteBuffer data) {
-			LinkedList<ByteBuffer> b = ssl.encryptDataToSend(this, data);
-			if (b != null && !b.isEmpty()) {
+			LinkedList<ByteBuffer> b;
+			try {
+				b = ssl.encryptDataToSend(this, data);
+			} catch (SSLException e) {
+				return new Async<>(e);
+			}
+			if (!b.isEmpty()) {
 				do {
 					ByteBuffer buffer = b.removeFirst();
 					IAsync<IOException> send = SSLClient.super.send(buffer);
@@ -154,7 +159,7 @@ public class SSLClient extends TCPClient {
 						return send;
 				} while (true);
 			}
-			return new Async<>(new IOException("Error encrypting data"));
+			return new Async<>(new SSLException("Error encrypting data"));
 		}
 		
 		@Override
@@ -200,14 +205,9 @@ public class SSLClient extends TCPClient {
 		conn.thenStart(new Task.Cpu<Void, NoException>("Start SSL protocol for TCPClient", Task.PRIORITY_NORMAL) {
 			@Override
 			public Void run() {
-				if (conn.hasError()) {
+				if (!conn.isSuccessful()) {
 					removeAttribute(CONNECT_ATTRIBUTE);
-					result.error(conn.getError());
-					return null;
-				}
-				if (conn.isCancelled()) {
-					removeAttribute(CONNECT_ATTRIBUTE);
-					result.cancel(conn.getCancelEvent());
+					conn.forwardIfNotSuccessful(result);
 					return null;
 				}
 				ssl.startConnection(sslClient, true, timeout);
@@ -288,10 +288,7 @@ public class SSLClient extends TCPClient {
 					}
 					if (list != null)
 						for (Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> t : list)
-							if (receive.hasError())
-								t.getValue1().error(receive.getError());
-							else
-								t.getValue1().cancel(receive.getCancelEvent());
+							receive.forwardIfNotSuccessful(t.getValue1());
 					return null;
 				}
 				ByteBuffer b = receive.getResult();
@@ -318,9 +315,11 @@ public class SSLClient extends TCPClient {
 		Task.Cpu<Void, NoException> task = new Task.Cpu<Void, NoException>("Encrypting SSL data", Task.PRIORITY_NORMAL) {
 			@Override
 			public Void run() {
-				LinkedList<ByteBuffer> encrypted = ssl.encryptDataToSend(sslClient, data);
-				if (encrypted == null) {
-					result.error(new IOException("SSL error"));
+				LinkedList<ByteBuffer> encrypted;
+				try {
+					encrypted = ssl.encryptDataToSend(sslClient, data);
+				} catch (SSLException e) {
+					result.error(e);
 					return null;
 				}
 				JoinPoint<IOException> jp = new JoinPoint<>();

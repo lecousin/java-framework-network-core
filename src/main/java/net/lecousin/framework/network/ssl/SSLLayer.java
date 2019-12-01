@@ -89,6 +89,10 @@ public class SSLLayer {
 		this.hostNames = hostNames;
 	}
 	
+	public Logger getLogger() {
+		return logger;
+	}
+	
 	/**
 	 * Start the connection with the SSL handshake.
 	 */
@@ -359,8 +363,7 @@ public class SSLLayer {
 			SSLEngineResult result;
 			try { result = engine.unwrap(inputBuffer, dst); }
 			catch (SSLException e) {
-				if (logger.error())
-					logger.error("Error decrypting data from SSL connection " + conn, e);
+				logger.error("Error decrypting data from SSL connection " + conn, e);
 				conn.close();
 				return;
 			}
@@ -398,22 +401,16 @@ public class SSLLayer {
 	
 	/** Encrypt the given data. */
 	@SuppressWarnings("squid:S1319") // return LinkedList instead of List
-	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, ByteBuffer data) {
+	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, ByteBuffer data) throws SSLException {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
+		if (engine == null) throw new SSLException("Cannot send SSL data because connection is not even started");
 		if (logger.debug())
 			logger.debug("Encrypting " + data.remaining() + " bytes for SSL connection " + conn);
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		ByteBuffer dst = null;
 		do {
 			if (dst == null) dst = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
-			SSLEngineResult result;
-			try { result = engine.wrap(data, dst); }
-			catch (SSLException e) {
-				if (logger.error())
-					logger.error("Error encrypting data for SSL client", e);
-				conn.close();
-				return null;
-			}
+			SSLEngineResult result = engine.wrap(data, dst);
 			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
 				ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
 				dst.flip();

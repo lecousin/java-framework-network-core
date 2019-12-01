@@ -149,7 +149,12 @@ public class SSLServerProtocol implements ServerProtocol {
 	@Override
 	public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
 		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
-		return ssl.encryptDataToSend(c, data);
+		try {
+			return ssl.encryptDataToSend(c, data);
+		} catch (SSLException e) {
+			ssl.getLogger().error("Error encrypting SSL data to client", e);
+			return null;
+		}
 	}
 	
 }

@@ -175,6 +175,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 	 */
 	public AsyncSupplier<ByteBuffer, IOException> receiveData(int expectedBytes, int timeout) {
 		if (endOfInput) return new AsyncSupplier<>(null, null);
+		if (channel == null) return new AsyncSupplier<>(null, new ClosedChannelException());
 		if (networkClient.reading != null && !networkClient.reading.isDone())
 			return new AsyncSupplier<>(null, new IOException("TCPClient is already waiting for data"));
 		logger.debug("Register to NetworkManager for reading data");
@@ -478,6 +479,8 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		}
 		if (data.remaining() == 0)
 			return new Async<>(true);
+		if (channel == null)
+			return new Async<>(new ClosedChannelException());
 		Async<IOException> sp = new Async<>();
 		synchronized (toSend) {
 			toSend.addLast(new Pair<>(data, sp));
