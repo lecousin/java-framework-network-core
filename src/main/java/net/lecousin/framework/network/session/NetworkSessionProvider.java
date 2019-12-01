@@ -101,8 +101,6 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 	}
 	
 	private Session checkSession(Session s, TCPRemote client, String ts, String r, String sid) {
-		if (s == null)
-			return null;
 		if (StringUtil.decodeHexaLong(r) != ((Long)s.getData("_nsrd")).longValue()) {
 			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
 			return null;

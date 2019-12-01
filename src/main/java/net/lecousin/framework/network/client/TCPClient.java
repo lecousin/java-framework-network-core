@@ -56,12 +56,12 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 
 	@Override
 	public SocketAddress getLocalAddress() throws IOException {
-		return channel.getLocalAddress();
+		return channel != null ? channel.getLocalAddress() : null;
 	}
 	
 	@Override
 	public SocketAddress getRemoteAddress() throws IOException {
-		return channel.getRemoteAddress();
+		return channel != null ? channel.getRemoteAddress() : null;
 	}
 	
 	@Override

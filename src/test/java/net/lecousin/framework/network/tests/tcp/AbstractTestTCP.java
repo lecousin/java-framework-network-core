@@ -95,6 +95,8 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 			client = new SSLClient(sslTest);
 		else
 			client = new TCPClient();
+		Assert.assertNull(client.getLocalAddress());
+		Assert.assertNull(client.getRemoteAddress());
 		Async<IOException> sp = client.connect(serverAddress, 10000, options);
 		try {
 			sp.blockThrow(0);
@@ -102,6 +104,8 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 			client.close();
 			throw e;
 		}
+		Assert.assertNotNull(client.getLocalAddress());
+		Assert.assertNotNull(client.getRemoteAddress());
 		client.toString();
 		return client;
 	}

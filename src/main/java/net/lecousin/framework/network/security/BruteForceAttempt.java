@@ -195,7 +195,7 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 	public void attempt(TCPRemote client, String functionality, String value) {
 		try {
 			attempt(((InetSocketAddress)client.getRemoteAddress()).getAddress(), functionality, value);
-		} catch (IOException e) {
+		} catch (Exception e) {
 			// ignore
 		}
 	}

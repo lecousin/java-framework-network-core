@@ -85,11 +85,35 @@ public class TestSession extends LCCoreAbstractTest {
 		Assert.assertNotNull(s);
 		Assert.assertEquals("world", s.getData("hello"));
 		sp.destroy(s);
+		
 		s = sp.get(id, client).blockResult(0);
 		Assert.assertNull(s);
-		sp.close();
+		Assert.assertNull(sp.get(null, null));
+		Assert.assertNull(sp.get("1", null).blockResult(0));
+		s = sp.get("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF", client).blockResult(0);
+		Assert.assertNull(s);
+		
+		s = sp.create(client);
+		sp.save(s, client);
+		id = s.getId();
+		Assert.assertNotNull(sp.get(id, client).blockResult(0));
+		s = sp.get("0000000000000000" + id.substring(16, id.length() - 16) + "0000000000000000", client).blockResult(0);
+		Assert.assertNull(s);
+		s = sp.get("0000000000000000" + id.substring(16), client).blockResult(0);
+		Assert.assertNull(s);
+
 		client.close();
+		Assert.assertNull(sp.get(id, client).blockResult(0));
+		
+		client = new TCPClient();
+		client.connect(new InetSocketAddress("www.yahoo.com", 80), 10000).blockThrow(0);
+		Assert.assertNull(sp.get(id, client).blockResult(0));
+		client.close();
+		
+		Assert.assertNull(sp.create(new TCPClient()));
 		sm.close();
+		Assert.assertNull(sp.create(new TCPClient()));
+		sp.close();
 	}
 	
 }
