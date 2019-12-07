@@ -34,7 +34,10 @@ import net.lecousin.framework.xml.serialization.XMLDeserializer;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.BlockJUnit4ClassRunner;
 
+@RunWith(BlockJUnit4ClassRunner.class)
 public class TestSecurity extends LCCoreAbstractTest {
 
 	@Before
