@@ -255,6 +255,50 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		}
 		
 		/**
+		 * Wait for the given number of bytes to be consumed. If this number of bytes cannot be reached, an error is raised.
+		 */
+		public Async<IOException> skipBytes(int nbBytes, int timeout) {
+			Async<IOException> res = new Async<>();
+			MutableInteger pos = new MutableInteger(0);
+			if (remainingRead != null) {
+				int len = Math.min(nbBytes, remainingRead.remaining());
+				remainingRead.position(remainingRead.position() + len);
+				if (!remainingRead.hasRemaining())
+					remainingRead = null;
+				if (len == nbBytes) {
+					res.unblock();
+					return res;
+				}
+				pos.set(len);
+			}
+			client.receiveData(Math.min(nbBytes - pos.get(), 65536), timeout).listen(
+				new IOUtil.RecursiveAsyncSupplierListener<ByteBuffer>((result, that) -> {
+					if (result == null) {
+						res.error(new IOException("End of data after " + pos.get()
+							+ " bytes while waiting for " + nbBytes + " bytes"));
+						return;
+					}
+					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
+						@Override
+						public Void run() {
+							int len = Math.min(result.remaining(), nbBytes - pos.get());
+							result.position(result.position() + len);
+							if (result.hasRemaining())
+								remainingRead = result;
+							pos.add(len);
+							if (pos.get() == nbBytes) {
+								res.unblock();
+								return null;
+							}
+							client.receiveData(Math.min(nbBytes - pos.get(), 65536), timeout).listen(that);
+							return null;
+						}
+					}.start();
+				}, res, null));
+			return res;
+		}
+		
+		/**
 		 * Receive data until the given byte is read. This can be useful for protocols that have an end of message marker,
 		 * or protocols that send lines of text.
 		 */
