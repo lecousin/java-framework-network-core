@@ -69,6 +69,7 @@ public class NetworkSecurity {
 		});
 		loaded.start();
 		
+		loaded.onDone(() -> logger.info("Security configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()));
 		loaded.thenStart(taskSave, true);
 		loaded.thenStart(taskClean, true);
 	}

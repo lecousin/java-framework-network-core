@@ -11,6 +11,7 @@ import java.util.Map;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.io.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.io.util.DataUtil;
+import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.NetUtil;
 
 /** Black list of IP addresses. */
@@ -26,7 +27,7 @@ public class IPBlackList implements NetworkSecurityFeature {
 
 		@Override
 		public NetworkSecurityFeature newInstance(Application app, Object configuration) {
-			return new IPBlackList((Config)configuration);
+			return new IPBlackList((Config)configuration, app.getLoggerFactory().getLogger(IPBlackList.class));
 		}
 		
 	}
@@ -54,6 +55,7 @@ public class IPBlackList implements NetworkSecurityFeature {
 		
 	}
 
+	private Logger logger;
 	private ArrayList<Category> categories = new ArrayList<>();
 	private boolean updated = false;
 
@@ -63,7 +65,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 		private Map<Long,Map<Long,Long>> ipv6 = new HashMap<>(50);
 	}
 	
-	private IPBlackList(Config cfg) {
+	private IPBlackList(Config cfg, Logger logger) {
+		this.logger = logger;
 		if (cfg != null && cfg.category != null)
 			for (Config.Category cfgCat : cfg.category) {
 				Category cat = new Category();
@@ -204,6 +207,7 @@ public class IPBlackList implements NetworkSecurityFeature {
 				if (exp == null || exp.longValue() < expiration.longValue()) {
 					cat.ipv4.put(ip, expiration);
 					updated = true;
+					logger.info("IPv4 black listed in category " + category + ": " + address);
 				}
 			} else if (address instanceof Inet6Address) {
 				byte[] ip = address.getAddress();
@@ -218,7 +222,10 @@ public class IPBlackList implements NetworkSecurityFeature {
 				if (exp == null || exp.longValue() < expiration.longValue()) {
 					map.put(ip2, expiration);
 					updated = true;
+					logger.info("IPv6 black listed in category " + category + ": " + address);
 				}
+			} else {
+				logger.error("Unknown address type to black list: " + address);
 			}
 		}
 	}
@@ -235,8 +242,10 @@ public class IPBlackList implements NetworkSecurityFeature {
 			if (cat == null) return;
 			if (address instanceof Inet4Address) {
 				Integer ip = Integer.valueOf(((Inet4Address)address).hashCode());
-				if (cat.ipv4.remove(ip) != null)
+				if (cat.ipv4.remove(ip) != null) {
 					updated = true;
+					logger.info("IPv4 address removed from black list in category " + category + ": " + address);
+				}
 				return;
 			}
 			if (address instanceof Inet6Address) {
@@ -249,26 +258,35 @@ public class IPBlackList implements NetworkSecurityFeature {
 					if (map.isEmpty())
 						cat.ipv6.remove(ip1);
 					updated = true;
+					logger.info("IPv4 address removed from black list in category " + category + ": " + address);
 				}
+			} else {
+				logger.error("Unknown address type to remove from black list: " + address);
 			}
 		}
 	}
 	
 	/** Remove all black listed IPs in the given category. */
 	public void clearCategory(String category) {
-		for (Category c : categories)
-			if (c.name.contentEquals(category)) {
-				c.ipv4.clear();
-				c.ipv6.clear();
-				updated = true;
-				break;
-			}
+		synchronized (this) {
+			for (Category c : categories)
+				if (c.name.contentEquals(category)) {
+					c.ipv4.clear();
+					c.ipv6.clear();
+					updated = true;
+					logger.info("All IPs removed from black list in category " + category);
+					break;
+				}
+		}
 	}
 	
 	/** Remove all black listed IPs. */
 	public void clearAll() {
-		categories.clear();
-		updated = true;
+		synchronized (this) {
+			categories.clear();
+			updated = true;
+			logger.info("All IPs removed from black list");
+		}
 	}
 	
 	@Override
