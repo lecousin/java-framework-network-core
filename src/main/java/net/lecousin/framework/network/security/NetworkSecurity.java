@@ -116,7 +116,8 @@ public class NetworkSecurity {
 		return (T)instances.get(clazz);
 	}
 	
-	private JoinPoint<NoException> save() {
+	/** Save the configuration to the application configuration directory. */
+	public IAsync<NoException> save() {
 		JoinPoint<NoException> jp = new JoinPoint<>();
 		if (!appCfgDir.exists()) {
 			jp.start();

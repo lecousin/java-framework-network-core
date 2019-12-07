@@ -93,6 +93,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 			}
 			client.close();
 		}
+		security.save().block(0);
 		
 		// unblack list
 		bl.unblacklist("test", InetAddress.getByName("localhost"));
@@ -109,6 +110,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 			Assert.assertEquals(5, buf.remaining());
 			client.close();
 		}
+		security.save().block(0);
 		
 		// black list with IPv6
 		bl.blacklist("test", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), 5000);
@@ -117,6 +119,10 @@ public class TestSecurity extends LCCoreAbstractTest {
 		// keep black listed ips to save
 		bl.blacklist("test2", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4 }), 600000);
 		bl.blacklist("test2", InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }), 600000);
+		security.save().block(0);
+		
+		bl.clearAll();
+		security.save().block(0);
 		
 		server.close();
 	}
@@ -153,11 +159,13 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertFalse(bl.acceptAddress(ipv4));
 		bf.attempt(ipv4, "test", "test11");
 		Assert.assertFalse(bl.acceptAddress(ipv4));
-		
+		security.save().block(0);
+
 		bl.clearCategory(BruteForceAttempt.IP_BLACKLIST_CATEGORY);
 		bl.clearCategory("does not exist");
 		bl.clearAll();
 		bf.clearAll();
+		security.save().block(0);
 
 		InetAddress ipv6 = InetAddress.getByAddress(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
 		Assert.assertTrue(bl.acceptAddress(ipv6));
@@ -185,9 +193,11 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertFalse(bl.acceptAddress(ipv6));
 		bf.attempt(ipv6, "test", "test11");
 		Assert.assertFalse(bl.acceptAddress(ipv6));
-		
+		security.save().block(0);
+
 		bl.clearAll();
 		bf.clearAll();
+		security.save().block(0);
 	}
 	
 	@Test
