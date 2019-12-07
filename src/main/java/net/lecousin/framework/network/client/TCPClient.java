@@ -1,6 +1,7 @@
 package net.lecousin.framework.network.client;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -230,8 +231,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			client.receiveData(nbBytes - pos.get(), timeout).listen(
 				new IOUtil.RecursiveAsyncSupplierListener<ByteBuffer>((result, that) -> {
 					if (result == null) {
-						res.unblockError(new IOException("End of data after " + pos.get()
-							+ " bytes while waiting for " + nbBytes + " bytes"));
+						unexpectedEnd(res, pos.get(), nbBytes + " byte(s)");
 						return;
 					}
 					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
@@ -274,8 +274,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			client.receiveData(Math.min(nbBytes - pos.get(), 65536), timeout).listen(
 				new IOUtil.RecursiveAsyncSupplierListener<ByteBuffer>((result, that) -> {
 					if (result == null) {
-						res.error(new IOException("End of data after " + pos.get()
-							+ " bytes while waiting for " + nbBytes + " bytes"));
+						unexpectedEnd(res, pos.get(), nbBytes + " byte(s)");
 						return;
 					}
 					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
@@ -322,8 +321,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			client.receiveData(initialBufferSize, timeout).listen(
 				new IOUtil.RecursiveAsyncSupplierListener<ByteBuffer>((result, that) -> {
 					if (result == null) {
-						res.unblockError(new IOException("End of data after " + io.getPosition()
-							+ " bytes read, while waiting for an end marker byte " + endMarker));
+						unexpectedEnd(res, io.getPosition(), "an end marker byte " + endMarker);
 						return;
 					}
 					new Task.Cpu<Void, NoException>("TCPClient.readUntil", Task.PRIORITY_RATHER_IMPORTANT) {
@@ -346,6 +344,10 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					}.start();
 				}, res, null));
 			return res;
+		}
+		
+		private static void unexpectedEnd(IAsync<IOException> result, long nbRead, String waitingFor) {
+			result.error(new EOFException("End of data after " + nbRead + "byte(s) while waiting for " + waitingFor));
 		}
 		
 		/** Wait for data until connection is closed.

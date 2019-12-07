@@ -100,6 +100,24 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 	}
 	
 	@Test
+	public void testClientReceiverSkipBytes() throws Exception {
+		TCPClient client = connectClient();
+		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
+		Assert.assertArrayEquals(new byte[] { 'e' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
+		Assert.assertArrayEquals(new byte[] { 'c' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
+		Assert.assertArrayEquals(new byte[] { 'm' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
+		Assert.assertArrayEquals(new byte[] { '\n' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+		Async<IOException> sp = new Async<>();
+		client.newDataToSendWhenPossible(() -> ByteBuffer.wrap("test".getBytes()), sp);
+		client.close();
+		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		Assert.assertEquals(0, server.getConnectedClients().size());
+	}
+	
+	@Test
 	public void testClientReceiverReadAvailableBytes() throws Exception {
 		TCPClient client = connectClient();
 		client.getReceiver().readAvailableBytes(10, 0).blockResult(0);
