@@ -18,10 +18,9 @@ build_script:
 test_script:
   - mvn test verify --batch-mode
 after_test:
-  - ps: |
-      Invoke-WebRequest -Uri 'https://codecov.io/bash' -OutFile codecov.sh
-      Get-ChildItem env:
-      bash codecov.sh -f target/site/jacoco/jacoco.xml
+ - "SET PATH=C:\\Python34;C:\\Python34\\Scripts;%PATH%"
+ - pip install codecov
+ - codecov -f "target/site/jacoco/jacoco.xml"
 cache:
   - C:\maven\
   - C:\Users\appveyor\.m2
