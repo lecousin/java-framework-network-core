@@ -11,7 +11,7 @@ import java.util.Map;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.io.util.DataUtil;
-import net.lecousin.framework.network.NetUtil;
+import net.lecousin.framework.network.IPAddressUtil;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.serialization.annotations.TypeSerializer;
 
@@ -48,7 +48,7 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 		public ArrayList<Attempt> attempt;
 		
 		/** Saved attempt. */
-		@TypeSerializer(NetUtil.IPSerializer.class)
+		@TypeSerializer(IPAddressUtil.IPSerializer.class)
 		public static class Attempt {
 			public byte[] ip;
 			public String functionality;

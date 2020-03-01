@@ -2,16 +2,18 @@ package net.lecousin.framework.network.tests;
 
 import java.net.InetSocketAddress;
 
-import org.junit.Assert;
-import org.junit.Test;
-
 import net.lecousin.framework.application.LCCore;
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.memory.IMemoryManageable.FreeMemoryLevel;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.session.NetworkSessionProvider;
 import net.lecousin.framework.network.session.Session;
 import net.lecousin.framework.network.session.SessionInMemory;
+
+import org.junit.Assert;
+import org.junit.Test;
 
 public class TestSession extends LCCoreAbstractTest {
 
@@ -47,12 +49,15 @@ public class TestSession extends LCCoreAbstractTest {
 		sm.release(id);
 		sm.remove(id);
 		Assert.assertFalse(sm.load(id, new Session("")).blockResult(0).booleanValue());
+		sm.freeMemory(FreeMemoryLevel.EXPIRED_ONLY);
 		sm.close();
-		
-		// try with fast expiration
-		sm = new SessionInMemory(5000);
-		id = sm.allocateId();
-		s = new Session(id);
+	}
+	
+	@Test
+	public void testSessionInMemoryLoadExpired() throws Exception {
+		SessionInMemory sm = new SessionInMemory(2000);
+		String id = sm.allocateId();
+		Session s = new Session(id);
 		s.putData("toto", "titi");
 		sm.save(id, s).blockThrow(0);
 		sm.getDescription();
@@ -61,10 +66,33 @@ public class TestSession extends LCCoreAbstractTest {
 		Assert.assertTrue(sm.load(id, s).blockResult(0).booleanValue());
 		Assert.assertEquals("titi", s.getData("toto"));
 		s.putData("toto", "tata");
+		long t1 = System.currentTimeMillis();
+		sm.save(id, s).blockThrow(0);
+		long t2 = System.currentTimeMillis();
+		// wait for expiration
+		do {
+			boolean loaded = sm.load(id, new Session("")).blockResult(0).booleanValue();
+			long t = System.currentTimeMillis();
+			if (t - t1 < 2000)
+				Assert.assertTrue(loaded);
+			else if (t - t2 > 2000) {
+				Assert.assertFalse(loaded);
+				break;
+			}
+		} while (true);
+		sm.close();
+	}
+	
+	@Test
+	public void testSessionInMemoryAutomaticExpiration() throws Exception {
+		SessionInMemory sm = new SessionInMemory(10);
+		String id = sm.allocateId();
+		Session s = new Session(id);
+		s.putData("toto", "titi");
 		sm.save(id, s).blockThrow(0);
 		// wait for expiration
-		try { Thread.sleep(5500); }
-		catch (InterruptedException e) {}
+		Async<NoException> wait = new Async<>();
+		wait.block(2000);
 		Assert.assertFalse(sm.load(id, new Session("")).blockResult(0).booleanValue());
 		sm.close();
 	}

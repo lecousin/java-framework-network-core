@@ -11,7 +11,7 @@ import java.util.Map;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.log.Logger;
-import net.lecousin.framework.network.NetUtil;
+import net.lecousin.framework.network.IPAddressUtil;
 import net.lecousin.framework.serialization.annotations.TypeSerializer;
 
 /** Black list of IP addresses. */
@@ -47,7 +47,7 @@ public class IPBlackList implements NetworkSecurityFeature {
 		}
 		
 		/** IP address. */
-		@TypeSerializer(NetUtil.IPSerializer.class)
+		@TypeSerializer(IPAddressUtil.IPSerializer.class)
 		public static class IP {
 			public byte[] ip;
 			public long expiration;

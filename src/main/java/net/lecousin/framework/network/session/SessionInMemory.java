@@ -46,7 +46,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 		if (expiration > 0) {
 			checkExpirationTask = Task.cpu("Check expired sessions", Task.Priority.LOW, 
 				(Task<Void, NoException> t) -> checkExpiredSessions())
-				.executeEvery(30L * 60 * 1000, 60L * 60 * 1000);
+				.executeEvery(expiration / 3, expiration).start();
 			MemoryManager.register(this);
 		}
 	}
@@ -117,7 +117,6 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	}
 	
 	private Void checkExpiredSessions() {
-		if (expiration <= 0) return null;
 		long now = System.currentTimeMillis();
 		List<String> toRemove = new LinkedList<>();
 		synchronized (this) {
@@ -141,6 +140,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	
 	@Override
 	public void freeMemory(FreeMemoryLevel level) {
+		if (expiration <= 0) return;
 		checkExpiredSessions();
 	}
 	
