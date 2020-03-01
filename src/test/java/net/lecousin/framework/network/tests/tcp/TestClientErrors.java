@@ -3,6 +3,7 @@ package net.lecousin.framework.network.tests.tcp;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
@@ -37,6 +38,20 @@ public class TestClientErrors extends AbstractTestTCP {
 			throw new AssertionError("Receiving data using a not connected client must throw an IOException");
 		} catch (IOException e) {
 			// ok
+		}
+	}
+	
+	@Test
+	public void testConnectTwice() throws Exception {
+		try (TCPClient client = useSSL ? new SSLClient() : new TCPClient()) {
+			Async<IOException> sp = client.connect(serverAddress, 10000);
+			sp = client.connect(serverAddress, 10000);
+			try {
+				sp.blockThrow(0);
+				throw new AssertionError();
+			} catch (Exception e) {
+				// ok
+			}
 		}
 	}
 

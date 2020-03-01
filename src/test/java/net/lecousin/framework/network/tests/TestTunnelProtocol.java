@@ -26,7 +26,13 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 		private TestTunnel() {
 			logger = LCCore.getApplication().getLoggerFactory().getLogger(TestTunnelProtocol.class);
 			logger.setLevel(Level.TRACE);
-			tunnelProtocol = new TunnelProtocol(4096, 5000, 5000, logger);
+			tunnelProtocol = new TunnelProtocol(4096, 1000, 2000, logger);
+			Assert.assertEquals(1000, tunnelProtocol.getClientSendTimeout());
+			tunnelProtocol.setClientSendTimeout(5000);
+			Assert.assertEquals(5000, tunnelProtocol.getClientSendTimeout());
+			Assert.assertEquals(2000, tunnelProtocol.getRemoteSendTimeout());
+			tunnelProtocol.setRemoteSendTimeout(5000);
+			Assert.assertEquals(5000, tunnelProtocol.getRemoteSendTimeout());
 		}
 		
 		private Logger logger;

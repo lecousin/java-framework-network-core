@@ -12,6 +12,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.util.PartialAsyncConsumer;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.mutable.MutableBoolean;
@@ -205,6 +208,54 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		spReceived.block(10000);
 		Assert.assertEquals("Welcome\nHello Message 1\nHello Message 2\n", received.toString());
 		client.close();
+	}
+	
+	private static class TextConsumer implements PartialAsyncConsumer<ByteBuffer, IOException> {
+		
+		private StringBuilder received = new StringBuilder();
+		private String expected;
+		
+		public TextConsumer(String expected) {
+			this.expected = expected;
+		}
+		
+		@Override
+		public boolean isExpectingData() {
+			return received.length() < expected.length();
+		}
+		
+		@Override
+		public AsyncSupplier<Boolean, IOException> consume(ByteBuffer data) {
+			while (isExpectingData()) {
+				if (!data.hasRemaining())
+					return new AsyncSupplier<>(Boolean.FALSE, null);
+				received.append((char)(data.get() & 0xFF));
+			}
+			if (!received.toString().equals(expected))
+				return new AsyncSupplier<>(null, new IOException("Unexpected message from server: " + received.toString()));
+			return new AsyncSupplier<>(Boolean.TRUE, null);
+		}
+	}
+	
+	@Test
+	public void testClientReceiverWithConsumer() throws Exception {
+		try (TCPClient client = connectClient()) {
+			IAsync<IOException> consumed = client.getReceiver().consume(new TextConsumer("Welcome\n"), 8192, 10000);
+			sendLine(client, "I'm Message 1");
+			sendLine(client, "I'm Message 2");
+			consumed.blockThrow(0);
+			consumed = client.getReceiver().consume(new TextConsumer("Hello Message 1\n"), 8192, 10000);
+			consumed.blockThrow(0);
+			consumed = client.getReceiver().consume(new TextConsumer("Hello Message 2\n"), 8192, 10000);
+			consumed.blockThrow(0);
+			sendLine(client, "I'm Message 3");
+			consumed = client.getReceiver().consume(new TextConsumer("Hello Message 3\n"), 8192, 10000);
+			consumed.blockThrow(0);
+			sendLine(client, "I'm Message 4");
+			consumed = client.getReceiver().consume(new TextConsumer("Hello Message x\n"), 8192, 10000);
+			consumed.block(0);
+			Assert.assertTrue(consumed.hasError());
+		}
 	}
 	
 	@Test
