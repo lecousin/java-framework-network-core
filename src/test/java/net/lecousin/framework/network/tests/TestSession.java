@@ -76,7 +76,10 @@ public class TestSession extends LCCoreAbstractTest {
 			if (t - t1 < 2000)
 				Assert.assertTrue(loaded);
 			else if (t - t2 > 2000) {
-				Assert.assertFalse(loaded);
+				if (t - t2 > 5000)
+					Assert.assertFalse(loaded);
+				else if (loaded)
+					continue;
 				break;
 			}
 		} while (true);
