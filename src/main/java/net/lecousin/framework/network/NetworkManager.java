@@ -155,6 +155,7 @@ public class NetworkManager implements Closeable {
 	private Thread worker;
 	private boolean stop = false;
 	private TurnArray<RegisterRequest> requests = new TurnArray<>(30);
+	private int maxDataTraceSize = -1;
 	
 	public Logger getLogger() {
 		return logger;
@@ -320,7 +321,7 @@ public class NetworkManager implements Closeable {
 							listeners.channelClosed();
 							continue;
 						}
-						if (trace) logger.trace("Ready operation: " + ops + " for " + key.toString());
+						if (trace) logger.trace("Ready operation: " + ops + " for " + key.channel());
 						if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 							Server server = listeners.onAccept;
 							try {
@@ -627,7 +628,7 @@ public class NetworkManager implements Closeable {
 					s.append(channel.toString());
 					s.append("\r\n");
 					DebugUtil.dumpHex(s, buffer);
-					dataLogger.trace(s.toString());
+					traceData(s);
 				}
 				receiver.received(buffer);
 				return null;
@@ -678,6 +679,23 @@ public class NetworkManager implements Closeable {
 				listener.channelClosed();
 			return null;
 		}).start();
+	}
+	
+	public int getMaximumDataTraceSize() {
+		return maxDataTraceSize;
+	}
+	
+	public void setMaximumDataTraceSize(int maxSize) {
+		maxDataTraceSize = maxSize;
+	}
+	
+	/** Trace network data. */
+	public void traceData(StringBuilder s) {
+		if (maxDataTraceSize > 100 && s.length() > maxDataTraceSize) {
+			int middle = maxDataTraceSize / 2 - 10;
+			s.replace(middle, s.length() - middle, "\n[...]\n");
+		}
+		dataLogger.trace(s.toString());
 	}
 	
 }

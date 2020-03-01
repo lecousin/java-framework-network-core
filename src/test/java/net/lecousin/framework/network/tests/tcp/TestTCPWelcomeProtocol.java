@@ -11,19 +11,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 
-import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.io.util.DataUtil;
-import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.mutable.MutableBoolean;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
-import net.lecousin.framework.network.ssl.SSLLayer;
 
+import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import junit.framework.AssertionFailedError;
@@ -39,6 +38,16 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		return new WelcomeProtocol();
 	}
 	
+	@BeforeClass
+	public static void reduceLogs() {
+		deactivateNetworkTraces();
+	}
+	
+	@AfterClass
+	public static void putBackLogs() {
+		activateNetworkTraces();
+	}
+
 	@Test
 	public void testWithSocket() throws Exception {
 		if (!(server.getProtocol() instanceof WelcomeProtocol))
@@ -201,10 +210,6 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 	@Test
 	public void testFloodMe() throws Exception {
 		Assert.assertEquals(0, server.getConnectedClients().size());
-		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
-		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
-		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.INFO);
-		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.INFO);
 		TCPClient client = connectClient();
 		expectLine(client, "Welcome");
 		sendLine(client, "flood me");
@@ -220,10 +225,6 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 			catch (InterruptedException e) { break; }
 		}
 		client.close();
-		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
-		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
-		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.TRACE);
-		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}

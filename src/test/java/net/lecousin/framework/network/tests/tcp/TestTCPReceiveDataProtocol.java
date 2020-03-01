@@ -3,14 +3,14 @@ package net.lecousin.framework.network.tests.tcp;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 
-import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
@@ -97,36 +97,32 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 	protected ServerProtocol createProtocol() {
 		return new ReceiveDataProtocol();
 	}
+	
+	@BeforeClass
+	public static void reduceLogs() {
+		deactivateNetworkTraces();
+	}
+	
+	@AfterClass
+	public static void putBackLogs() {
+		activateNetworkTraces();
+	}
 
 	@Test
 	public void testSendDataClientToServer() throws Exception {
-		try {
-			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
-			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
-			TCPClient client = connectClient();
-			sendDataLoop(client);
-			expectLine(client, "OK");
-			client.close();
-		} finally {
-			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
-			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
-		}
+		TCPClient client = connectClient();
+		sendDataLoop(client);
+		expectLine(client, "OK");
+		client.close();
 	}
 	
 	@Test
 	public void testSendThenClose() throws Exception {
-		try {
-			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
-			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
-			TCPClient client = connectClient();
-			byte[][] data = generateDataToSend();
-			for (int i = 0; i < NB_BLOCKS / 2; ++i)
-				client.send(ByteBuffer.wrap(data[i]), 5000);
-			client.close();
-		} finally {
-			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
-			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
-		}
+		TCPClient client = connectClient();
+		byte[][] data = generateDataToSend();
+		for (int i = 0; i < NB_BLOCKS / 2; ++i)
+			client.send(ByteBuffer.wrap(data[i]), 5000);
+		client.close();
 	}
 
 }

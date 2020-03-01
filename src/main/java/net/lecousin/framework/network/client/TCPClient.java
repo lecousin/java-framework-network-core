@@ -611,7 +611,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					StringBuilder s = new StringBuilder(data.remaining() * 4);
 					s.append("TCPClient: Data to send to server:\r\n");
 					DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-					manager.getDataLogger().trace(s.toString());
+					manager.traceData(s);
 				}
 				toSend.addLast(new Pair<>(data, it.hasNext() ? null : sp));
 			} while (it.hasNext());

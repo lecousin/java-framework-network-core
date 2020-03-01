@@ -12,6 +12,7 @@ import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.NetworkManager;
+import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
 
 /**
@@ -52,9 +53,16 @@ public class UDPClient implements Closeable {
 				}
 				int nb;
 				try {
+					ByteBuffer data = bufToSend.getValue1();
+					if (data.hasArray() && manager.getDataLogger().trace()) {
+						StringBuilder s = new StringBuilder(data.remaining() * 4);
+						s.append("UDPClient: send data to").append(target).append(":\r\n");
+						DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
+						manager.traceData(s);
+					}
 					synchronized (UDPClient.this) {
 						if (channel == null) throw new ClosedChannelException();
-						nb = channel.send(bufToSend.getValue1(), target);
+						nb = channel.send(data, target);
 					}
 				} catch (IOException e) {
 					// error while sending data, just skip it
