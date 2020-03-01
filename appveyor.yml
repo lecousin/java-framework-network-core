@@ -14,12 +14,13 @@ install:
   - cmd: SET MAVEN_OPTS=-Xmx1024m
   - cmd: SET JAVA_OPTS=-XX:+UseG1GC -Xmx1024m
 build_script:
-  - mvn clean package --batch-mode -DskipTest
+  - mvn clean package --batch-mode -DskipTests
 test_script:
   - mvn test verify --batch-mode
 after_test:
   - ps: |
       Invoke-WebRequest -Uri 'https://codecov.io/bash' -OutFile codecov.sh
+      Get-ChildItem env:
       bash codecov.sh -f target/site/jacoco/jacoco.xml
 cache:
   - C:\maven\
