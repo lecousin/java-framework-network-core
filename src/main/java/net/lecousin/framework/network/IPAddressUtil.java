@@ -20,6 +20,7 @@ public final class IPAddressUtil {
 	
 	/** Create a 4-bytes array from a String representation of an IPv4 address. 
 	 * @throws EncodingException if a value is not a valid number */
+	@SuppressWarnings("java:S2589") // false positive
 	public static byte[] fromStringV4(CharSequence str) throws EncodingException {
 		byte[] ip = new byte[4];
 		int pos = 0;
@@ -53,6 +54,7 @@ public final class IPAddressUtil {
 	
 	/** Create a 16-bytes array from a String representation of an IPv6 address. 
 	 * @throws EncodingException if a character is not valid */
+	@SuppressWarnings("java:S3776") // complexity
 	public static byte[] fromStringV6(CharSequence str) throws EncodingException {
 		byte[] ip = new byte[16];
 		if (str.charAt(0) == ':') {
