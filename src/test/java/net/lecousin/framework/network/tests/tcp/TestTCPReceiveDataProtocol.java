@@ -2,10 +2,10 @@ package net.lecousin.framework.network.tests.tcp;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.util.LinkedList;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.log.Logger.Level;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
@@ -34,7 +34,7 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 	private static void sendDataLoop(TCPRemote remote) {
 		byte[][] data = generateDataToSend();
 		for (int i = 0; i < NB_BLOCKS; ++i) {
-			remote.send(ByteBuffer.wrap(data[i]));
+			remote.send(ByteBuffer.wrap(data[i]), 5000);
 			if ((i % 20) == 0)
 				try { Thread.sleep(400); }
 				catch (InterruptedException e) {}
@@ -47,13 +47,10 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 	private static class ReceiveDataProtocol implements ServerProtocol {
 
 		@Override
-		public void startProtocol(TCPServerClient client) {
+		public int startProtocol(TCPServerClient client) {
 			client.setAttribute("block_counter", Integer.valueOf(0));
 			client.setAttribute("byte_counter", Integer.valueOf(0));
-			try { client.waitForData(10000); }
-			catch (ClosedChannelException e) {
-				e.printStackTrace(System.err);
-			}
+			return 10000;
 		}
 
 		@Override
@@ -62,7 +59,7 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 		}
 
 		@Override
-		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 			int block = ((Integer)client.getAttribute("block_counter")).intValue();
 			int index = ((Integer)client.getAttribute("byte_counter")).intValue();
 			while (data.hasRemaining()) {
@@ -85,20 +82,13 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 			}
 			client.setAttribute("block_counter", Integer.valueOf(block));
 			client.setAttribute("byte_counter", Integer.valueOf(index));
-			onbufferavailable.run();
+			ByteArrayCache.getInstance().free(data);
 			if (block == NB_BLOCKS) {
-				client.send(ByteBuffer.wrap(new byte[] { 'O', 'K', '\n' }));
+				client.send(ByteBuffer.wrap(new byte[] { 'O', 'K', '\n' }), 5000);
 				return;
 			}
 			try { client.waitForData(10000); }
 			catch (ClosedChannelException e) {}
-		}
-
-		@Override
-		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
-			LinkedList<ByteBuffer> list = new LinkedList<>();
-			list.add(data);
-			return list;
 		}
 		
 	}
@@ -131,7 +121,7 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 			TCPClient client = connectClient();
 			byte[][] data = generateDataToSend();
 			for (int i = 0; i < NB_BLOCKS / 2; ++i)
-				client.send(ByteBuffer.wrap(data[i]));
+				client.send(ByteBuffer.wrap(data[i]), 5000);
 			client.close();
 		} finally {
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);

@@ -10,10 +10,10 @@ import java.util.Iterator;
 import java.util.Map;
 
 import net.lecousin.framework.application.Application;
-import net.lecousin.framework.io.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.TCPRemote;
+import net.lecousin.framework.serialization.annotations.TypeSerializer;
 
 /**
  * Store a possible brute force attempt (in other word a wrong password).
@@ -100,14 +100,14 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					a.lastTime = ca.lastTime;
 					a.lastValue = ca.lastValue;
 					a.attempts = ca.attempts;
-					m.put(Integer.valueOf(DataUtil.readIntegerLittleEndian(ca.ip, 0)), a);
+					m.put(Integer.valueOf(DataUtil.Read32.LE.read(ca.ip, 0)), a);
 				} else {
 					Map<Long, Map<Long, Attempt>> m = ipv6.get(ca.functionality);
 					if (m == null) {
 						m = new HashMap<>(5);
 						ipv6.put(ca.functionality, m);
 					}
-					Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 0));
+					Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ca.ip, 0));
 					Map<Long, Attempt> m2 = m.get(ip1);
 					if (m2 == null) {
 						m2 = new HashMap<>(20);
@@ -117,7 +117,7 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					a.lastTime = ca.lastTime;
 					a.lastValue = ca.lastValue;
 					a.attempts = ca.attempts;
-					Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ca.ip, 8));
+					Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ca.ip, 8));
 					m2.put(ip2, a);
 				}
 			}
@@ -148,13 +148,13 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					map = new HashMap<>(5);
 					ipv6.put(functionality, map);
 				}
-				Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
+				Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ip, 0));
 				Map<Long, Attempt> mapIp = map.get(ip1);
 				if (mapIp == null) {
 					mapIp = new HashMap<>(20);
 					map.put(ip1, mapIp);
 				}
-				Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
+				Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ip, 8));
 				Attempt a = attempt(mapIp, ip2, value);
 				if (a == null)
 					return;
@@ -254,7 +254,7 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 					Config.Attempt a = new Config.Attempt();
 					a.functionality = func;
 					a.ip = new byte[4];
-					DataUtil.writeIntegerLittleEndian(a.ip, 0, e2.getKey().intValue());
+					DataUtil.Write32.LE.write(a.ip, 0, e2.getKey().intValue());
 					Attempt ma = e2.getValue();
 					a.lastValue = ma.lastValue;
 					a.lastTime = ma.lastTime;
@@ -271,8 +271,8 @@ public class BruteForceAttempt implements NetworkSecurityFeature {
 						a.functionality = func;
 						a.ip = new byte[16];
 						Long ip2 = e3.getKey();
-						DataUtil.writeLongLittleEndian(a.ip, 0, ip1.longValue());
-						DataUtil.writeLongLittleEndian(a.ip, 8, ip2.longValue());
+						DataUtil.Write64.LE.write(a.ip, 0, ip1.longValue());
+						DataUtil.Write64.LE.write(a.ip, 8, ip2.longValue());
 						Attempt ma = e3.getValue();
 						a.lastValue = ma.lastValue;
 						a.lastTime = ma.lastTime;

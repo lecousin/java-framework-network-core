@@ -11,13 +11,15 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.function.Supplier;
 
-import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocolCommonAttributes;
@@ -34,6 +36,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 
 	protected ServerProtocol protocol;
 	protected ArrayList<Client> clients = new ArrayList<>();
+	protected ByteArrayCache bufferCache = ByteArrayCache.getInstance();
 	
 	public ServerProtocol getProtocol() {
 		return protocol;
@@ -56,7 +59,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 	}
 	
 	/** Return a list of currently connected clients. */
-	@SuppressWarnings("squid:S1319") // return ArrayList instead of List
+	@SuppressWarnings("java:S1319") // return ArrayList instead of List
 	public ArrayList<Closeable> getConnectedClients() {
 		ArrayList<Closeable> list;
 		synchronized (clients) {
@@ -70,7 +73,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 	 */
 	public AsyncSupplier<SocketAddress, IOException> bind(SocketAddress local, int backlog) {
 		AsyncSupplier<SocketAddress, IOException> result = new AsyncSupplier<>();
-		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+		Task.cpu("Bind server", Task.Priority.IMPORTANT, t -> {
 			ServerSocketChannel channel;
 			try {
 				channel = ServerSocketChannel.open();
@@ -78,11 +81,12 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				channel.bind(local, backlog);
 			} catch (IOException e) {
 				result.error(e);
-				return;
+				return null;
 			}
 			ServerChannel sc = new ServerChannel(channel);
 			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_ACCEPT, sc, 0);
 			finalizeBinding(accept, sc, channel, result);
+			return null;
 		}).start();
 		return result;
 	}
@@ -101,7 +105,10 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (!channel.isOpen()) return;
 				clients.add(c);
 			}
-			protocol.startProtocol(c.publicInterface);
+			int recvTimeout = protocol.startProtocol(c.publicInterface);
+			if (recvTimeout >= 0)
+				try { c.publicInterface.waitForData(recvTimeout); }
+				catch (ClosedChannelException e) { c.close(); }
 		}
 
 		@Override
@@ -129,11 +136,11 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		
 		SocketChannel channel;
 		private TCPServerClient publicInterface;
-		private ArrayList<ByteBuffer> inputBuffers = new ArrayList<>();
 		private LinkedList<Pair<ByteBuffer,Async<IOException>>> outputBuffers = new LinkedList<>();
+		private int lastSendTimeout = 0;
 		private boolean waitToSend = false;
 		private boolean closeAfterLastOutput = false;
-		private Supplier<ByteBuffer> dataToSendProvider = null;
+		private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 		private Async<IOException> dataToSendSP = null;
 		
 		public TCPServer getServer() {
@@ -164,7 +171,6 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
 			}
 			publicInterface = null;
-			inputBuffers = null;
 			outputBuffers = null;
 		}
 		
@@ -184,41 +190,29 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		
 		@Override
 		public ByteBuffer allocateReceiveBuffer() {
-			ArrayList<ByteBuffer> buffers = inputBuffers;
-			if (buffers == null) return ByteBuffer.allocate(512); // server closed
-			synchronized (buffers) {
-				if (!buffers.isEmpty()) {
-					ByteBuffer buffer = buffers.remove(buffers.size() - 1);
-					buffer.clear();
-					return buffer;
-				}
-			}
-			return ByteBuffer.allocate(protocol.getInputBufferSize());
+			return ByteBuffer.wrap(bufferCache.get(protocol.getInputBufferSize(), true));
 		}
 		
 		@Override
 		public void received(ByteBuffer buffer) {
-			protocol.dataReceivedFromClient(publicInterface, buffer, () -> {
-				if (channel == null) return; // already closed
-				synchronized (inputBuffers) {
-					inputBuffers.add(buffer);
-				}
-			});
+			protocol.dataReceivedFromClient(publicInterface, buffer);
 		}
 		
 		@Override
 		public void endOfInput(ByteBuffer buffer) {
+			if (buffer != null && buffer.hasArray())
+				bufferCache.free(buffer.array());
 			// the client closed the channel
 			close();
 		}
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
-			if (inputBuffers != null && buffer != null && channel != null)
-				synchronized (inputBuffers) { inputBuffers.add(buffer); }
+			if (buffer != null && buffer.hasArray())
+				bufferCache.free(buffer.array());
 		}
 		
-		synchronized Async<IOException> send(ByteBuffer buf, boolean closeAfter) throws ClosedChannelException {
+		synchronized Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {
 			if (channel == null) throw new ClosedChannelException();
 			// ask the protocol to do any needed processing before sending the data
 			LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
@@ -236,8 +230,9 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
 			}
 			closeAfterLastOutput = closeAfter;
+			lastSendTimeout = timeout;
 			if (!waitBefore && dataToSendProvider == null)
-				manager.register(channel, SelectionKey.OP_WRITE, this, 0);
+				manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
 			return sp;
 		}
 		
@@ -262,6 +257,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (manager.getLogger().debug()) manager.getLogger().debug(nb + " bytes sent on " + channel);
 				if (!buffer.hasRemaining()) {
 					// done with this buffer
+					bufferCache.free(buffer);
 					buffer = null;
 					if (buffers.isEmpty()) {
 						// no more buffer
@@ -288,22 +284,18 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			synchronized (Client.this) {
 				if (outputBuffers == null || channel == null) return;
 				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
-					Supplier<ByteBuffer> provider = dataToSendProvider;
+					Supplier<List<ByteBuffer>> provider = dataToSendProvider;
 					Async<IOException> sp = dataToSendSP;
 					dataToSendProvider = null;
 					dataToSendSP = null;
-					new Task.Cpu.FromRunnable("Prepare data to send from data supplier", Task.PRIORITY_IMPORTANT, () -> {
-						LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
-						if (buffers.isEmpty())
-							sp.unblock();
-						else
-							for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
-								ByteBuffer b = it.next();
-								outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
-							}
-						readyToSend();
-					}).start();
-					return;
+					LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
+					if (buffers.isEmpty())
+						sp.unblock();
+					else
+						for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
+							ByteBuffer b = it.next();
+							outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
+						}
 				}
 				while (outputBuffers != null && !outputBuffers.isEmpty()) {
 					try {
@@ -330,7 +322,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (manager.getLogger().debug())
 					manager.getLogger().debug("Register to NetworkManager to send data: "
 						+ outputBuffers.size() + " buffer(s) remaining");
-				manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
+				manager.register(channel, SelectionKey.OP_WRITE, Client.this, lastSendTimeout);
 			}
 		}
 		
@@ -355,6 +347,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					manager.getLogger().debug(nb + " bytes sent on " + channel);
 				if (!toWrite.getValue1().hasRemaining()) {
 					// we are done with this buffer
+					bufferCache.free(toWrite.getValue1());
 					outputBuffers.removeFirst();
 					if (toWrite.getValue2() != null)
 						toWrite.getValue2().unblock();
@@ -364,14 +357,16 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			return nb;
 		}
 		
-		public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {
+		public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
 			synchronized (this) {
-				Supplier<ByteBuffer> prevProvider = dataToSendProvider;
+				if (channel == null)
+					sp.error(new ClosedChannelException());
+				Supplier<List<ByteBuffer>> prevProvider = dataToSendProvider;
 				Async<IOException> prevSP = dataToSendSP;
 				dataToSendProvider = dataProvider;
 				dataToSendSP = sp;
 				if (!waitToSend && outputBuffers.isEmpty() && prevProvider == null)
-					manager.register(channel, SelectionKey.OP_WRITE, Client.this, 0);
+					manager.register(channel, SelectionKey.OP_WRITE, Client.this, timeout);
 				if (prevProvider != null)
 					prevSP.unblock();
 			}

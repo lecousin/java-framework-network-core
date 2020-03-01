@@ -4,9 +4,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
-
-import org.junit.Assert;
-import org.junit.Test;
+import java.util.List;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
@@ -19,20 +17,23 @@ import net.lecousin.framework.network.server.protocol.ServerProtocol;
 import net.lecousin.framework.network.server.protocol.TunnelProtocol;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 
+import org.junit.Assert;
+import org.junit.Test;
+
 public class TestTunnelProtocol extends AbstractNetworkTest {
 
 	private static class TestTunnel implements ServerProtocol {
 		private TestTunnel() {
 			logger = LCCore.getApplication().getLoggerFactory().getLogger(TestTunnelProtocol.class);
 			logger.setLevel(Level.TRACE);
-			tunnelProtocol = new TunnelProtocol(4096, logger);
+			tunnelProtocol = new TunnelProtocol(4096, 5000, 5000, logger);
 		}
 		
 		private Logger logger;
 		private TunnelProtocol tunnelProtocol;
 
 		@Override
-		public void startProtocol(TCPServerClient client) {
+		public int startProtocol(TCPServerClient client) {
 			TCPClient tunnel = new TCPClient();
 			try {
 				tunnel.connect(new InetSocketAddress("www.google.com", 80), 10000).blockThrow(0);
@@ -40,12 +41,13 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 				logger.error("Unable to connect to google", t);
 				client.close();
 				tunnel.close();
-				return;
+				return -1;
 			}
 			tunnelProtocol.registerClient(client, tunnel);
-			tunnelProtocol.startProtocol(client);
+			int recvTimeout = tunnelProtocol.startProtocol(client);
 			tunnelProtocol.getInputBufferSize();
-			client.send(ByteBuffer.wrap(new byte[] { 1 }));
+			client.send(ByteBuffer.wrap(new byte[] { 1 }), 5000);
+			return recvTimeout;
 		}
 
 		@Override
@@ -54,12 +56,12 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 		}
 
 		@Override
-		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
-			tunnelProtocol.dataReceivedFromClient(client, data, onbufferavailable);
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
+			tunnelProtocol.dataReceivedFromClient(client, data);
 		}
 
 		@Override
-		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, List<ByteBuffer> data) {
 			return tunnelProtocol.prepareDataToSend(client, data);
 		};
 	}
@@ -74,7 +76,7 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 		client.connect(new InetSocketAddress("localhost", 12345), 10000).blockThrow(0);
 		byte[] buf = client.getReceiver().readBytes(1, 0).blockResult(0);
 		Assert.assertEquals(1, buf[0]);
-		client.send(ByteBuffer.wrap("GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n".getBytes(StandardCharsets.US_ASCII))).blockThrow(0);
+		client.send(ByteBuffer.wrap("GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n".getBytes(StandardCharsets.US_ASCII)), 10000).blockThrow(0);
 		ByteArrayIO io = client.getReceiver().readUntil((byte)'\n', 2048, 20000).blockResult(0);
 		Assert.assertEquals("HTTP/1.1 200 ", io.getAsString(StandardCharsets.US_ASCII).substring(0, 13));
 		io.close();

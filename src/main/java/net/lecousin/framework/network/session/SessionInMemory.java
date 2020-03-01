@@ -9,19 +9,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.encoding.HexaDecimalEncoding;
+import net.lecousin.framework.encoding.StringEncoding;
 import net.lecousin.framework.exception.NoException;
-import net.lecousin.framework.io.encoding.HexaDecimalEncoder;
 import net.lecousin.framework.memory.IMemoryManageable;
 import net.lecousin.framework.memory.MemoryManager;
 import net.lecousin.framework.util.IDManagerString;
 import net.lecousin.framework.util.IDManagerStringFromLong;
 import net.lecousin.framework.util.Pair;
 import net.lecousin.framework.util.RandomIDManagerLong;
-import net.lecousin.framework.util.StringEncoding;
 
 /**
  * Store sessions in memory.
@@ -30,7 +30,13 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 
 	/** Constructor. */
 	public SessionInMemory(long expiration) {
-		this(new IDManagerStringFromLong(new RandomIDManagerLong(), new StringEncoding.EncodedLong(new HexaDecimalEncoder())), expiration);
+		this(
+			new IDManagerStringFromLong(
+				new RandomIDManagerLong(),
+				new StringEncoding.EncodedLong(HexaDecimalEncoding.instance, HexaDecimalEncoding.instance)
+			),
+			expiration
+		);
 	}
 	
 	/** Constructor. */
@@ -38,7 +44,8 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 		this.idManager = idManager;
 		this.expiration = expiration;
 		if (expiration > 0) {
-			checkExpirationTask = new Task.Cpu.FromRunnable("Check expired sessions", Task.PRIORITY_LOW, this::checkExpiredSessions)
+			checkExpirationTask = Task.cpu("Check expired sessions", Task.Priority.LOW, 
+				(Task<Void, NoException> t) -> checkExpiredSessions())
 				.executeEvery(30L * 60 * 1000, 60L * 60 * 1000);
 			MemoryManager.register(this);
 		}
@@ -47,7 +54,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 	private HashMap<String, Pair<Long,List<Pair<String, Serializable>>>> sessions = new HashMap<>(100);
 	private IDManagerString idManager;
 	private long expiration;
-	private Task<Void, NoException> checkExpirationTask;
+	private Task<Void, ?> checkExpirationTask;
 	
 	@Override
 	public void close() {
@@ -109,8 +116,8 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 		return expiration;
 	}
 	
-	private void checkExpiredSessions() {
-		if (expiration <= 0) return;
+	private Void checkExpiredSessions() {
+		if (expiration <= 0) return null;
 		long now = System.currentTimeMillis();
 		List<String> toRemove = new LinkedList<>();
 		synchronized (this) {
@@ -119,6 +126,7 @@ public class SessionInMemory implements SessionStorage, IMemoryManageable {
 					toRemove.add(e.getKey());
 			for (String id : toRemove) remove(id);
 		}
+		return null;
 	}
 	
 	@Override

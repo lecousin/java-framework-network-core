@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.function.Supplier;
 
 import net.lecousin.framework.concurrent.async.Async;
@@ -36,16 +37,18 @@ public class TCPServerClient extends AbstractAttributesContainer implements Clos
 	}
 	
 	/** Send data to this client. */
-	public Async<IOException> send(ByteBuffer data, boolean closeAfter) throws ClosedChannelException {
-		return privateInterface.send(data, closeAfter);
+	public Async<IOException> send(List<ByteBuffer> data, int timeout, boolean closeAfter) throws ClosedChannelException {
+		return privateInterface.send(data, timeout, closeAfter);
 	}
 	
 	@Override
-	public IAsync<IOException> send(ByteBuffer data) {
-		try { return send(data, false); }
+	public IAsync<IOException> send(List<ByteBuffer> data, int timeout) {
+		try { return send(data, timeout, false); }
 		catch (ClosedChannelException e) { return new Async<>(e); }
 	}
 
+	// TODO overwrite asConsumer because we are already able to keep buffers in toSend
+	
 	@Override
 	public boolean isClosed() {
 		return privateInterface.isClosed();
@@ -93,8 +96,8 @@ public class TCPServerClient extends AbstractAttributesContainer implements Clos
 	 * Send data to this client, but instead of giving directly the data, a provider is given.
 	 */
 	@Override
-	public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {
-		privateInterface.newDataToSendWhenPossible(dataProvider, sp);
+	public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
+		privateInterface.newDataToSendWhenPossible(dataProvider, sp, timeout);
 	}
 	
 	@Override

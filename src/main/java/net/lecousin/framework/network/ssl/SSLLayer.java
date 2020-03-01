@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -17,11 +18,13 @@ import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.Executable;
 import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.LockPoint;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.AttributesContainer;
 
 /**
@@ -65,6 +68,7 @@ public class SSLLayer {
 	public SSLLayer(SSLContext context) {
 		this.context = context;
 		this.logger = LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class);
+		this.bufferCache = ByteArrayCache.getInstance();
 	}
 
 	/** Constructor. */
@@ -73,6 +77,7 @@ public class SSLLayer {
 	}
 	
 	private Logger logger;
+	private ByteArrayCache bufferCache;
 	private SSLContext context;
 	private List<String> hostNames = null;
 	
@@ -83,7 +88,7 @@ public class SSLLayer {
 	private static final String HANDSHAKE_FOLLOWUP_ATTRIBUTE = "protocol.ssl.handshake.followup";
 	private static final String HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE = "protocol.ssl.handshake.followup.lock";
 
-	private static final ByteBuffer emptyBuffer = ByteBuffer.allocate(0);
+	private static final ByteBuffer emptyBuffer = ByteBuffer.allocate(0).asReadOnlyBuffer();
 	
 	public void setHostNames(List<String> hostNames) {
 		this.hostNames = hostNames;
@@ -108,14 +113,15 @@ public class SSLLayer {
 				engine.setSSLParameters(params);
 			}
 			engine.setUseClientMode(clientMode);
-			ByteBuffer inputBuffer = ByteBuffer.allocate(
-				Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()) << 1);
+			ByteBuffer inputBuffer = ByteBuffer.wrap(bufferCache.get(
+				Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()) << 1,
+				true));
 			engine.beginHandshake();
 			conn.setAttribute(ENGINE_ATTRIBUTE, engine);
 			conn.setAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE, inputBuffer);
 			conn.setAttribute(ENGINE_INPUT_LOCK, new Object());
 			conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.TRUE);
-			HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
+			Task<Void, NoException> task = handshakeTask(conn, timeout);
 			conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 			task.start();
 		} catch (SSLException e) {
@@ -123,10 +129,14 @@ public class SSLLayer {
 			conn.close();
 		}
 	}
-	
-	private class HandshakeFollowup extends Task.Cpu<Void,NoException> {
+
+	private Task<Void, NoException> handshakeTask(TCPConnection conn, int timeout) {
+		return Task.cpu("SSL Handshake", new HandshakeFollowup(conn, timeout));
+	}
+
+	private class HandshakeFollowup implements Executable<Void,NoException> {
+		
 		public HandshakeFollowup(TCPConnection conn, int timeout) {
-			super("SSL Handshake", Task.PRIORITY_NORMAL);
 			this.conn = conn;
 			this.timeout = timeout;
 		}
@@ -136,7 +146,7 @@ public class SSLLayer {
 		
 		@SuppressWarnings("unchecked")
 		@Override
-		public Void run() {
+		public Void execute(Task<Void, NoException> t) {
 			LockPoint<NoException> lock;
 			synchronized (conn) {
 				lock = (LockPoint<NoException>)conn.getAttribute(HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE);
@@ -157,6 +167,7 @@ public class SSLLayer {
 		private void doFollowup() {
 			SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 			ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+			if (inputBuffer == null) return;
 			Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 			do {
 				if (logger.debug())
@@ -165,6 +176,8 @@ public class SSLLayer {
 						+ inputBuffer.position() + " on " + conn);
 				if (conn.isClosed()) {
 					conn.closed();
+					bufferCache.free(inputBuffer);
+					conn.removeAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
 					return;
 				}
 				switch (engine.getHandshakeStatus()) {
@@ -206,8 +219,7 @@ public class SSLLayer {
 				if (logger.debug())
 					logger.debug("Task to run: " + task);
 				if (task == null) break;
-				Task<Void,NoException> t = new Task.Cpu.FromRunnable(
-					task, "SSL Server Handshake task", Task.PRIORITY_NORMAL);
+				Task<Void,NoException> t = Task.cpu("SSL Server Handshake task", new Executable.FromRunnable(task));
 				t.start();
 				t.getOutput().onDone(() -> {
 					if (logger.debug())
@@ -225,7 +237,7 @@ public class SSLLayer {
 						conn.close();
 						return;
 					}
-					HandshakeFollowup task = new HandshakeFollowup(conn, timeout);
+					Task<Void, NoException> task = handshakeTask(conn, timeout);
 					conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 					task.start();
 				});
@@ -246,9 +258,9 @@ public class SSLLayer {
 					}
 					return true;
 				}
-				ByteBuffer dst = ByteBuffer.allocate(
+				ByteBuffer dst = ByteBuffer.wrap(bufferCache.get(
 					Math.max(engine.getSession().getApplicationBufferSize(),
-							engine.getSession().getPacketBufferSize()));
+							engine.getSession().getPacketBufferSize()), true));
 				do {
 					inputBuffer.flip();
 					SSLEngineResult result;
@@ -257,6 +269,7 @@ public class SSLLayer {
 						if (logger.error())
 							logger.error("Cannot unwrap SSL data from connection "
 								+ conn, e);
+						bufferCache.free(dst);
 						conn.handshakeError(e);
 						conn.close();
 						return true;
@@ -265,6 +278,7 @@ public class SSLLayer {
 						if (logger.debug())
 							logger.debug(
 								"Cannot unwrap, wait for more data from connection");
+						bufferCache.free(dst);
 						inputBuffer.compact();
 						try { conn.waitForData(8192, timeout); }
 						catch (ClosedChannelException e) {
@@ -276,9 +290,10 @@ public class SSLLayer {
 						if (logger.debug())
 							logger.debug(
 								"Cannot unwrap because buffer is too small, enlarge it");
-						ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
+						ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
 						dst.flip();
 						b.put(dst);
+						bufferCache.free(dst);
 						dst = b;
 						continue;
 					}
@@ -286,6 +301,7 @@ public class SSLLayer {
 						logger.debug(dst.position()
 							+ " unwrapped from SSL, remaining input: " + inputBuffer.remaining());
 					inputBuffer.compact();
+					bufferCache.free(dst);
 					break;
 				} while (true);
 			}
@@ -294,7 +310,8 @@ public class SSLLayer {
 	}
 	
 	private void followup(TCPConnection conn, int timeout) {
-		HandshakeFollowup task = (HandshakeFollowup)conn.getAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE);
+		@SuppressWarnings("unchecked")
+		Task<Void, NoException> task = (Task<Void, NoException>)conn.getAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE);
 		if (task != null) {
 			synchronized (task) {
 				if (!task.isRunning() && !task.isDone()) {
@@ -306,7 +323,7 @@ public class SSLLayer {
 		}
 		if (logger.debug())
 			logger.debug("Starting followup task for handshaking for connection " + conn);
-		task = new HandshakeFollowup(conn, timeout);
+		task = handshakeTask(conn, timeout);
 		conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 		task.start();
 	}
@@ -314,28 +331,29 @@ public class SSLLayer {
 	/** To call when some encrypted data has been received.
 	 * The data will be decrypted, and the method dataReceived called on the given connection.
 	 */
-	public void dataReceived(TCPConnection conn, ByteBuffer data, Runnable onbufferavailable, int timeout) {
+	public void dataReceived(TCPConnection conn, ByteBuffer data, int timeout) {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 		synchronized (inputLock) {
 			ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
+			if (inputBuffer == null) return;
 			if (logger.debug())
 				logger.debug("SSL data received from connection " + conn + ": "
 					+ data.remaining() + " bytes (" + inputBuffer.position() + " already in input buffer)");
 			// copy data into buffer
 			if (data.remaining() > inputBuffer.remaining()) {
 				// enlarge input buffer
-				ByteBuffer b = ByteBuffer.allocate(
-					inputBuffer.capacity() + data.remaining() + engine.getSession().getApplicationBufferSize());
+				ByteBuffer b = ByteBuffer.wrap(bufferCache.get(
+					inputBuffer.capacity() + data.remaining() + engine.getSession().getApplicationBufferSize(), true));
 				inputBuffer.flip();
 				b.put(inputBuffer);
+				bufferCache.free(inputBuffer);
 				inputBuffer = b;
 				conn.setAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE, inputBuffer);
 				// may be we should reduce buffer size sometimes ?
 			}
 			inputBuffer.put(data);
-			if (onbufferavailable != null)
-				onbufferavailable.run();
+			bufferCache.free(data);
 			// if we are handshaking, make the follow up
 			synchronized (conn) {
 				Boolean handshaking = (Boolean)conn.getAttribute(HANDSHAKING_ATTRIBUTE);
@@ -358,13 +376,14 @@ public class SSLLayer {
 		while (inputBuffer.hasRemaining()) {
 			if (conn.isClosed()) return;
 			if (dst == null)
-				dst = ByteBuffer.allocate(
-					Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()));
+				dst = ByteBuffer.wrap(bufferCache.get(
+					Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()), true));
 			SSLEngineResult result;
 			try { result = engine.unwrap(inputBuffer, dst); }
 			catch (SSLException e) {
 				logger.error("Error decrypting data from SSL connection " + conn, e);
 				conn.close();
+				bufferCache.free(dst);
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_UNDERFLOW.equals(result.getStatus())) {
@@ -377,14 +396,16 @@ public class SSLLayer {
 				else
 					try { conn.waitForData(inputBuffer.capacity(), timeout); }
 					catch (ClosedChannelException e) { conn.closed(); }
+				bufferCache.free(dst);
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
 				if (logger.debug())
 					logger.debug("Output buffer too small to decrypt data, try again with larger one");
-				ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
+				ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
 				dst.flip();
 				b.put(dst);
+				bufferCache.free(dst);
 				dst = b;
 				continue;
 			}
@@ -401,32 +422,43 @@ public class SSLLayer {
 	
 	/** Encrypt the given data. */
 	@SuppressWarnings("squid:S1319") // return LinkedList instead of List
-	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, ByteBuffer data) throws SSLException {
+	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, List<ByteBuffer> data) throws SSLException {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		if (engine == null) throw new SSLException("Cannot send SSL data because connection is not even started");
-		if (logger.debug())
-			logger.debug("Encrypting " + data.remaining() + " bytes for SSL connection " + conn);
+		Iterator<ByteBuffer> itData = data.iterator();
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		ByteBuffer dst = null;
-		do {
-			if (dst == null) dst = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
-			SSLEngineResult result = engine.wrap(data, dst);
-			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-				ByteBuffer b = ByteBuffer.allocate(dst.capacity() << 1);
-				dst.flip();
-				b.put(dst);
-				dst = b;
-				continue;
-			}
-			dst.flip();
-			buffers.add(dst);
+		while (itData.hasNext()) {
+			ByteBuffer toEncrypt = itData.next();
 			if (logger.debug())
-				logger.debug(result.bytesConsumed() + " bytes encrypted into "
-					+ dst.remaining() + " bytes for SSL connection " + conn);
-			dst = null;
-			if (!data.hasRemaining())
-				break;
-		} while (true);
+				logger.debug("Encrypting " + toEncrypt.remaining() + " bytes for SSL connection " + conn);
+			do {
+				if (dst == null) dst = ByteBuffer.wrap(bufferCache.get(engine.getSession().getPacketBufferSize(), true));
+				SSLEngineResult result = engine.wrap(toEncrypt, dst);
+				if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
+					ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
+					dst.flip();
+					b.put(dst);
+					bufferCache.free(dst);
+					dst = b;
+					continue;
+				}
+				if (dst.position() > 0) {
+					dst.flip();
+					buffers.add(dst);
+					if (logger.debug())
+						logger.debug(result.bytesConsumed() + " bytes encrypted into "
+							+ dst.remaining() + " bytes for SSL connection " + conn);
+					dst = null;
+				} else if (logger.debug()) {
+					logger.debug(result.bytesConsumed() + " bytes encrypted into 0 bytes for SSL connection " + conn);
+				}
+				if (!toEncrypt.hasRemaining()) {
+					bufferCache.free(toEncrypt);
+					break;
+				}
+			} while (true);
+		}
 		if (logger.debug())
 			logger.debug("Data encrypted to send on SSL connection " + conn + ": " + buffers.size() + " buffer(s)");
 		return buffers;

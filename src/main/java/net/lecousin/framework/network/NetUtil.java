@@ -10,9 +10,12 @@ import java.util.LinkedList;
 import java.util.List;
 
 import net.lecousin.framework.collections.ArrayUtil;
-import net.lecousin.framework.io.serialization.CustomSerializer;
-import net.lecousin.framework.io.serialization.TypeDefinition;
-import net.lecousin.framework.util.StringUtil;
+import net.lecousin.framework.encoding.EncodingException;
+import net.lecousin.framework.encoding.HexaDecimalEncoding;
+import net.lecousin.framework.serialization.CustomSerializer;
+import net.lecousin.framework.serialization.SerializationException;
+import net.lecousin.framework.serialization.TypeDefinition;
+import net.lecousin.framework.text.StringUtil;
 
 // skip checkstyle: MethodName
 /**
@@ -23,8 +26,9 @@ public final class NetUtil {
 	
 	private NetUtil() { /* no instance */ }
 
-	/** Convert a string containing a MAC address into an array of bytes. */
-	public static byte[] MACFromString(String str) {
+	/** Convert a string containing a MAC address into an array of bytes. 
+	 * @throws EncodingException if a character is not valid. */
+	public static byte[] MACFromString(String str) throws EncodingException {
 		String[] strs = str.split(":");
 		byte[] mac = new byte[strs.length];
 		for (int i = 0; i < strs.length; ++i)
@@ -42,12 +46,14 @@ public final class NetUtil {
 		return s.toString();
 	}
 	
-	/** Create a 4-bytes array from a String representation of an IPv4 address. */
-	public static byte[] IPv4FromString(String str) {
+	/** Create a 4-bytes array from a String representation of an IPv4 address. 
+	 * @throws EncodingException if a value is not a valid number */
+	public static byte[] IPv4FromString(String str) throws EncodingException {
 		String[] strs = str.split("\\.");
 		byte[] ip = new byte[strs.length];
 		for (int i = 0; i < strs.length; ++i)
-			ip[i] = (byte)Integer.parseInt(strs[i]);
+			try { ip[i] = (byte)Integer.parseInt(strs[i]); }
+			catch (NumberFormatException e) { throw new EncodingException("Invalid IP value " + strs[i]); }
 		return ip;
 	}
 
@@ -61,8 +67,9 @@ public final class NetUtil {
 		return s.toString();
 	}
 	
-	/** Create a 16-bytes array from a String representation of an IPv6 address. */
-	public static byte[] IPv6FromString(String str) {
+	/** Create a 16-bytes array from a String representation of an IPv6 address. 
+	 * @throws EncodingException if a character is not valid */
+	public static byte[] IPv6FromString(String str) throws EncodingException {
 		byte[] ip = new byte[16];
 		String[] strs = str.split("\\:");
 		if (str.startsWith("::")) {
@@ -92,8 +99,9 @@ public final class NetUtil {
 		return ip;
 	}
 	
-	/** Create a byte array from a String representation of a IPv4 or IPv6 address. */
-	public static byte[] IPFromString(String str) {
+	/** Create a byte array from a String representation of a IPv4 or IPv6 address. 
+	 * @throws EncodingException if a character is not valid*/
+	public static byte[] IPFromString(String str) throws EncodingException {
 		if (str.indexOf(':') >= 0)
 			return IPv6FromString(str);
 		return IPv4FromString(str);
@@ -178,8 +186,8 @@ public final class NetUtil {
 				StringBuilder s = new StringBuilder();
 				for (int i = 0; i < 16; ++i) {
 					if (i > 0 && (i % 2) == 0) s.append(':');
-					s.append(StringUtil.encodeHexaDigit((src[i] & 0xFF) >> 4));
-					s.append(StringUtil.encodeHexaDigit((src[i] & 0xFF) & 0xF));
+					s.append(HexaDecimalEncoding.encodeDigit((src[i] & 0xFF) >> 4));
+					s.append(HexaDecimalEncoding.encodeDigit((src[i] & 0xFF) & 0xF));
 				}
 				return s.toString();
 			}
@@ -188,26 +196,30 @@ public final class NetUtil {
 
 		@Override
 		@SuppressWarnings("squid:S2692") // indexOf > 0
-		public Object deserialize(Object source, Object containerInstance) {
+		public Object deserialize(Object source, Object containerInstance) throws SerializationException {
 			if (source == null) return null;
 			String src = (String)source;
 			src = src.trim();
 			if (src.length() == 0) return null;
-			if (src.indexOf('.') > 0)
-				return IPv4FromString(src);
-			if (src.indexOf(':') > 0) {
-				byte[] ip = new byte[16];
-				for (int i = 0; i < 8; ++i) {
-					ip[i * 2 + 0] = (byte) (
-						 (StringUtil.decodeHexa(src.charAt(i * 5 + 0)) << 4)
-						| StringUtil.decodeHexa(src.charAt(i * 5 + 1)));
-					ip[i * 2 + 1] = (byte) (
-						 (StringUtil.decodeHexa(src.charAt(i * 5 + 2)) << 4)
-						| StringUtil.decodeHexa(src.charAt(i * 5 + 3)));
+			try {
+				if (src.indexOf('.') > 0)
+					return IPv4FromString(src);
+				if (src.indexOf(':') > 0) {
+					byte[] ip = new byte[16];
+					for (int i = 0; i < 8; ++i) {
+						ip[i * 2 + 0] = (byte) (
+							 (HexaDecimalEncoding.decodeChar(src.charAt(i * 5 + 0)) << 4)
+							| HexaDecimalEncoding.decodeChar(src.charAt(i * 5 + 1)));
+						ip[i * 2 + 1] = (byte) (
+							 (HexaDecimalEncoding.decodeChar(src.charAt(i * 5 + 2)) << 4)
+							| HexaDecimalEncoding.decodeChar(src.charAt(i * 5 + 3)));
+					}
+					return ip;
 				}
-				return ip;
+				return null;
+			} catch (EncodingException e) {
+				throw new SerializationException("Invalid IP value: " + src, e);
 			}
-			return null;
 		}
 		
 	}

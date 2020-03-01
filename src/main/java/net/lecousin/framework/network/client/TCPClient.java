@@ -8,22 +8,26 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.concurrent.util.PartialAsyncConsumer;
 import net.lecousin.framework.event.SimpleEvent;
-import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.io.IO;
 import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.IOUtil;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.mutable.MutableInteger;
 import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.NetworkManager;
@@ -52,8 +56,9 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 	protected Async<IOException> spConnect;
 	protected boolean endOfInput = false;
 	private SimpleEvent onclosed = new SimpleEvent();
-	private Supplier<ByteBuffer> dataToSendProvider = null;
+	private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 	private Async<IOException> dataToSendSP = null;
+	private ByteArrayCache bufferCache = ByteArrayCache.getInstance();
 
 	@Override
 	public SocketAddress getLocalAddress() throws IOException {
@@ -93,7 +98,8 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		
 		@Override
 		public void connected() {
-			logger.debug("Client connected");
+			if (logger.debug())
+				logger.debug("Client connected to " + channel);
 			spConnect.unblock();
 			spConnect = null;
 		}
@@ -112,7 +118,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		@Override
 		public void received(ByteBuffer buffer) {
 			if (logger.debug()) {
-				logger.debug("Client received " + buffer.remaining() + " bytes");
+				logger.debug("Client received " + buffer.remaining() + " bytes from " + channel);
 				if (reading.isDone()) logger.error("Received data but this was not expected");
 			}
 			reading.unblockSuccess(buffer);
@@ -122,11 +128,13 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		public void receiveError(IOException error, ByteBuffer buffer) {
 			logger.debug("Client receive error", error);
 			reading.unblockError(error);
+			if (buffer != null && buffer.hasArray())
+				bufferCache.free(buffer.array());
 		}
 		
 		@Override
 		public ByteBuffer allocateReceiveBuffer() {
-			return ByteBuffer.allocate(expectedBytes);
+			return ByteBuffer.wrap(bufferCache.get(expectedBytes, true));
 		}
 		
 		@Override
@@ -215,13 +223,15 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		 */
 		public AsyncSupplier<byte[],IOException> readBytes(int nbBytes, int timeout) {
 			AsyncSupplier<byte[],IOException> res = new AsyncSupplier<>();
-			byte[] buf = new byte[nbBytes];
+			byte[] buf = client.bufferCache.get(nbBytes, false);
 			MutableInteger pos = new MutableInteger(0);
 			if (remainingRead != null) {
 				int len = Math.min(nbBytes, remainingRead.remaining());
 				remainingRead.get(buf, 0, len);
-				if (!remainingRead.hasRemaining())
+				if (!remainingRead.hasRemaining()) {
+					client.bufferCache.free(remainingRead);
 					remainingRead = null;
+				}
 				if (len == nbBytes) {
 					res.unblockSuccess(buf);
 					return res;
@@ -234,22 +244,21 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						unexpectedEnd(res, pos.get(), nbBytes + " byte(s)");
 						return;
 					}
-					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
-						@Override
-						public Void run() {
-							int len = Math.min(result.remaining(), nbBytes - pos.get());
-							result.get(buf, pos.get(), len);
-							if (result.hasRemaining())
-								remainingRead = result;
-							pos.add(len);
-							if (pos.get() == nbBytes) {
-								res.unblockSuccess(buf);
-								return null;
-							}
-							client.receiveData(nbBytes - pos.get(), timeout).listen(that);
+					Task.cpu("Handle received data from TCPClient", Task.Priority.RATHER_IMPORTANT, t -> {
+						int len = Math.min(result.remaining(), nbBytes - pos.get());
+						result.get(buf, pos.get(), len);
+						if (result.hasRemaining())
+							remainingRead = result;
+						else
+							client.bufferCache.free(result);
+						pos.add(len);
+						if (pos.get() == nbBytes) {
+							res.unblockSuccess(buf);
 							return null;
 						}
-					}.start();
+						client.receiveData(nbBytes - pos.get(), timeout).listen(that);
+						return null;
+					}).start();
 				}, res, null));
 			return res;
 		}
@@ -263,8 +272,10 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			if (remainingRead != null) {
 				int len = Math.min(nbBytes, remainingRead.remaining());
 				remainingRead.position(remainingRead.position() + len);
-				if (!remainingRead.hasRemaining())
+				if (!remainingRead.hasRemaining()) {
+					client.bufferCache.free(remainingRead);
 					remainingRead = null;
+				}
 				if (len == nbBytes) {
 					res.unblock();
 					return res;
@@ -277,22 +288,21 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						unexpectedEnd(res, pos.get(), nbBytes + " byte(s)");
 						return;
 					}
-					new Task.Cpu<Void, NoException>("Handle received data from TCPClient", Task.PRIORITY_RATHER_IMPORTANT) {
-						@Override
-						public Void run() {
-							int len = Math.min(result.remaining(), nbBytes - pos.get());
-							result.position(result.position() + len);
-							if (result.hasRemaining())
-								remainingRead = result;
-							pos.add(len);
-							if (pos.get() == nbBytes) {
-								res.unblock();
-								return null;
-							}
-							client.receiveData(Math.min(nbBytes - pos.get(), 65536), timeout).listen(that);
+					Task.cpu("Handle received data from TCPClient", Task.Priority.RATHER_IMPORTANT, t -> {
+						int len = Math.min(result.remaining(), nbBytes - pos.get());
+						result.position(result.position() + len);
+						if (result.hasRemaining())
+							remainingRead = result;
+						else
+							client.bufferCache.free(result);
+						pos.add(len);
+						if (pos.get() == nbBytes) {
+							res.unblock();
 							return null;
 						}
-					}.start();
+						client.receiveData(Math.min(nbBytes - pos.get(), 65536), timeout).listen(that);
+						return null;
+					}).start();
 				}, res, null));
 			return res;
 		}
@@ -301,9 +311,9 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		 * Receive data until the given byte is read. This can be useful for protocols that have an end of message marker,
 		 * or protocols that send lines of text.
 		 */
-		@SuppressWarnings("squid:S2095") // ByteArrayIO is returned so do not close it
-		public AsyncSupplier<ByteArrayIO,IOException> readUntil(byte endMarker, int initialBufferSize, int timeout) {
-			AsyncSupplier<ByteArrayIO,IOException> res = new AsyncSupplier<>();
+		@SuppressWarnings("java:S2095") // ByteArrayIO is returned so do not close it
+		public AsyncSupplier<ByteArrayIO, IOException> readUntil(byte endMarker, int initialBufferSize, int timeout) {
+			AsyncSupplier<ByteArrayIO, IOException> res = new AsyncSupplier<>();
 			ByteArrayIO io = new ByteArrayIO(initialBufferSize, "");
 			if (remainingRead != null) {
 				do {
@@ -311,8 +321,10 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					if (b == endMarker) {
 						io.seekSync(SeekType.FROM_BEGINNING, 0);
 						res.unblockSuccess(io);
-						if (!remainingRead.hasRemaining())
+						if (!remainingRead.hasRemaining()) {
+							client.bufferCache.free(remainingRead);
 							remainingRead = null;
+						}
 						return res;
 					}
 					io.write(b);
@@ -324,26 +336,67 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						unexpectedEnd(res, io.getPosition(), "an end marker byte " + endMarker);
 						return;
 					}
-					new Task.Cpu<Void, NoException>("TCPClient.readUntil", Task.PRIORITY_RATHER_IMPORTANT) {
-						@Override
-						public Void run() {
-							while (result.hasRemaining()) {
-								byte b = result.get();
-								if (b == endMarker) {
-									if (result.hasRemaining())
-										remainingRead = result;
-									io.seekSync(SeekType.FROM_BEGINNING, 0);
-									res.unblockSuccess(io);
-									return null;
-								}
-								io.write(b);
+					Task.cpu("TCPClient.readUntil", Task.Priority.RATHER_IMPORTANT, t -> {
+						while (result.hasRemaining()) {
+							byte b = result.get();
+							if (b == endMarker) {
+								if (result.hasRemaining())
+									remainingRead = result;
+								else
+									client.bufferCache.free(result);
+								io.seekSync(SeekType.FROM_BEGINNING, 0);
+								res.unblockSuccess(io);
+								return null;
 							}
-							client.receiveData(initialBufferSize, timeout).listen(that);
-							return null;
+							io.write(b);
 						}
-					}.start();
+						client.bufferCache.free(result);
+						client.receiveData(initialBufferSize, timeout).listen(that);
+						return null;
+					}).start();
 				}, res, null));
 			return res;
+		}
+		
+		/** Receive data from client and consume it. */
+		public IAsync<IOException> consume(PartialAsyncConsumer<ByteBuffer, IOException> consumer, int bufferSize, int timeout) {
+			Async<IOException> result = new Async<>();
+			consume(consumer, result, bufferSize, timeout);
+			return result;
+		}
+		
+		/** Receive data from client and consume it. */
+		public void consume(PartialAsyncConsumer<ByteBuffer, IOException> consumer, Async<IOException> result, int bufferSize, int timeout) {
+			if (remainingRead != null) {
+				consumer.consume(remainingRead).onDone(end -> {
+					if (!end.booleanValue()) {
+						remainingRead = null;
+						consume(consumer, result, bufferSize, timeout);
+					} else {
+						if (!remainingRead.hasRemaining())
+							remainingRead = null;
+						else if (!remainingRead.isReadOnly())
+							remainingRead = remainingRead.asReadOnlyBuffer();
+						result.unblock();
+					}
+				}, result);
+				return;
+			}
+			client.receiveData(bufferSize, timeout).thenStart("Consume data from client", Task.Priority.NORMAL, buffer -> {
+				if (buffer == null) {
+					result.error(new EOFException("Unexpected end of data from server"));
+					return;
+				}
+				consumer.consume(buffer).onDone(end -> {
+					if (!end.booleanValue()) {
+						consume(consumer, result, bufferSize, timeout);
+					} else {
+						if (buffer.hasRemaining())
+							remainingRead = buffer.asReadOnlyBuffer();
+						result.unblock();
+					}
+				}, result);
+			}, result);
 		}
 		
 		private static void unexpectedEnd(IAsync<IOException> result, long nbRead, String waitingFor) {
@@ -377,13 +430,13 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 			ByteBuffer remainingData, ByteBuffer newData, Consumer<ByteBuffer> listener,
 			int bufferSize, int timeout, boolean keepRemainingData
 		) {
-			new Task.Cpu.FromRunnable("Call TCPClient data receiver", Task.PRIORITY_NORMAL, () -> {
+			Task.cpu("Call TCPClient data receiver", Task.Priority.NORMAL, task -> {
 				ByteBuffer data;
 				if (remainingData == null)
 					data = newData;
 				else {
 					if (newData != null) {
-						data = ByteBuffer.allocate(remainingData.remaining() + newData.remaining());
+						data = ByteBuffer.wrap(client.bufferCache.get(remainingData.remaining() + newData.remaining(), true));
 						data.put(remainingData);
 						data.put(newData);
 						data.flip();
@@ -395,17 +448,18 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					listener.accept(data);
 				} catch (Exception t) {
 					client.logger.error("Exception thrown by data listener", t);
-					return;
+					return null;
 				}
 				if (data != null && data.hasRemaining() && keepRemainingData)
-					remainingRead = data;
+					remainingRead = data.asReadOnlyBuffer();
 				if (data == null && newData == null)
-					return; // end of data
+					return null; // end of data
 				client.receiveData(bufferSize, timeout).onDone(d -> {
 					ByteBuffer rem = remainingRead;
 					remainingRead = null;
 					call(rem, d, listener, bufferSize, timeout, keepRemainingData);
 				}, error -> { }, cancel -> { });
+				return null;
 			}).start();
 		}
 	}
@@ -429,6 +483,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 	
 	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
 	private boolean sending = false;
+	private int lastSendTimeout = 0;
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
 		public void channelClosed() {
@@ -437,12 +492,13 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		
 		@Override
 		public void sendTimeout() {
-			// nothing
+			close();
 		}
 		
 		@Override
 		public void readyToSend() {
-			logger.debug("Socket ready for sending, sending...");
+			if (logger.debug())
+				logger.debug("Socket ready for sending to " + channel + ", sending...");
 			boolean needsMore = false;
 			while (true) {
 				Pair<ByteBuffer, Async<IOException>> p;
@@ -450,17 +506,26 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 					sending = true;
 					if (toSend.isEmpty()) {
 						if (dataToSendProvider != null) {
-							p = new Pair<>(dataToSendProvider.get(), dataToSendSP);
-							toSend.add(p);
+							Iterator<ByteBuffer> it = dataToSendProvider.get().iterator();
+							if (!it.hasNext()) {
+								dataToSendSP.unblock();
+								dataToSendProvider = null;
+								dataToSendSP = null;
+								sending = false;
+								break;
+							}
+							do {
+								ByteBuffer data = it.next();
+								toSend.add(new Pair<>(data, it.hasNext() ? null : dataToSendSP));
+							} while (it.hasNext());
 							dataToSendProvider = null;
 							dataToSendSP = null;
 						} else {
 							sending = false;
 							break;
 						}
-					} else {
-						p = toSend.getFirst();
 					}
+					p = toSend.getFirst();
 				}
 				if (logger.debug())
 					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
@@ -469,6 +534,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					bufferCache.free(p.getValue1());
 					if (p.getValue2() != null)
 						p.getValue2().unblock();
 					continue;
@@ -476,15 +542,16 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 				int nb;
 				try {
 					nb = channel.write(p.getValue1());
-				} catch (IOException e) {
-					// error while sending data, just skip it
-					synchronized (toSend) {
-						if (!toSend.isEmpty())
-							toSend.removeFirst();
-					}
+				} catch (Exception e) {
+					// error while sending data, skip all data
 					if (logger.debug())
-						logger.debug("Data not sent", e);
-					if (p.getValue2() != null) p.getValue2().error(e);
+						logger.debug("Data not sent to " + channel, e);
+					synchronized (toSend) {
+						while (!toSend.isEmpty()) {
+							Async<IOException> sp = toSend.removeFirst().getValue2();
+							if (sp != null) sp.error(IO.error(e));
+						}
+					}
 					continue;
 				}
 				if (logger.debug())
@@ -499,6 +566,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 						if (!toSend.isEmpty())
 							toSend.removeFirst();
 					}
+					bufferCache.free(p.getValue1());
 					if (p.getValue2() != null)
 						p.getValue2().unblock();
 				}
@@ -511,7 +579,7 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 				return;
 			}
 			// still something to write, we need to register to the network manager
-			manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
+			manager.register(channel, SelectionKey.OP_WRITE, sender, lastSendTimeout);
 		}
 	};
 
@@ -520,41 +588,59 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 	 * without waiting for the previous message to be sent.
 	 */
 	@Override
-	public IAsync<IOException> send(ByteBuffer data) {
-		if (logger.debug())
-			logger.debug("Sending data: " + data.remaining());
-		if (data.hasArray() && manager.getDataLogger().trace()) {
-			StringBuilder s = new StringBuilder(data.remaining() * 4);
-			s.append("TCPClient: Data to send to server:\r\n");
-			DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-			manager.getDataLogger().trace(s.toString());
-		}
-		if (data.remaining() == 0)
+	public IAsync<IOException> send(List<ByteBuffer> dataList, int timeout) {
+		Iterator<ByteBuffer> it = dataList.iterator();
+		if (!it.hasNext())
 			return new Async<>(true);
-		if (channel == null)
-			return new Async<>(new ClosedChannelException());
-		Async<IOException> sp = new Async<>();
 		synchronized (toSend) {
-			toSend.addLast(new Pair<>(data, sp));
-			if (!sending && toSend.size() == 1 && dataToSendProvider == null)
-				manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
+			if (channel == null)
+				return new Async<>(new ClosedChannelException());
+			Async<IOException> sp = new Async<>();
+			boolean allEmpty = true;
+			boolean firstSend = toSend.isEmpty();
+			do {
+				ByteBuffer data = it.next();
+				if (data.remaining() == 0) {
+					bufferCache.free(data);
+					continue;
+				}
+				allEmpty = false;
+				if (logger.debug())
+					logger.debug("Sending data to " + channel + ": " + data.remaining());
+				if (data.hasArray() && manager.getDataLogger().trace()) {
+					StringBuilder s = new StringBuilder(data.remaining() * 4);
+					s.append("TCPClient: Data to send to server:\r\n");
+					DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
+					manager.getDataLogger().trace(s.toString());
+				}
+				toSend.addLast(new Pair<>(data, it.hasNext() ? null : sp));
+			} while (it.hasNext());
+			if (allEmpty) {
+				sp.unblock();
+				return sp;
+			}
+			lastSendTimeout = timeout;
+			if (!sending && firstSend && dataToSendProvider == null)
+				manager.register(channel, SelectionKey.OP_WRITE, sender, timeout);
+			return sp;
 		}
-		return sp;
 	}
 	
 	@Override
-	public void newDataToSendWhenPossible(Supplier<ByteBuffer> dataProvider, Async<IOException> sp) {
+	public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
 		synchronized (this) {
-			Supplier<ByteBuffer> prevProvider = dataToSendProvider;
+			Supplier<List<ByteBuffer>> prevProvider = dataToSendProvider;
 			Async<IOException> prevSP = dataToSendSP;
 			dataToSendProvider = dataProvider;
 			dataToSendSP = sp;
 			if (toSend.isEmpty() && prevProvider == null)
-				manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
+				manager.register(channel, SelectionKey.OP_WRITE, sender, timeout);
 			if (prevProvider != null)
 				prevSP.unblock();
 		}
 	}
+	
+	// TODO overwrite asConsumer because we are already able to keep buffers in toSend
 	
 	@Override
 	public void close() {

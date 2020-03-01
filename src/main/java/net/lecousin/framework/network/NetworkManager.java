@@ -22,9 +22,8 @@ import java.util.Set;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.security.IPBlackList;
@@ -117,7 +116,7 @@ public class NetworkManager implements Closeable {
 		dataLogger = app.getLoggerFactory().getLogger("network-data");
 		logger.info("Starting Network Manager for application " + app.getGroupId() + "-" + app.getArtifactId());
 		NetworkSecurity security = NetworkSecurity.get(app);
-		app.toClose(this);
+		app.toClose(1, this);
 		try {
 			selector = Selector.open();
 		} catch (IOException e) {
@@ -577,141 +576,108 @@ public class NetworkManager implements Closeable {
 		}
 		
 		private void acceptClient(Server server, SocketChannel client) {
-			new Task.Cpu<Void, NoException>("Accept network client", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					try {
-						InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
-						if (!blacklist.acceptAddress(addr.getAddress())) {
-							if (logger.debug())
-								logger.debug("Client rejected: " + addr);
-							client.close();
-						} else {
-							if (logger.debug())
-								logger.debug("New client connected: " + client.toString());
-							client.configureBlocking(false);
-							server.newClient(client);
-						}
-					} catch (Exception e) {
-						server.acceptError(IO.error(e));
+			Task.cpu("Accept network client", Task.Priority.NORMAL, t -> {
+				try {
+					InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
+					if (!blacklist.acceptAddress(addr.getAddress())) {
+						if (logger.debug())
+							logger.debug("Client rejected: " + addr);
+						client.close();
+					} else {
+						if (logger.debug())
+							logger.debug("New client connected: " + client.toString());
+						client.configureBlocking(false);
+						server.newClient(client);
 					}
-					return null;
+				} catch (Exception e) {
+					server.acceptError(IO.error(e));
 				}
-			}.start();
+				return null;
+			}).start();
 		}
 		
 		
 		private void acceptError(Server server, Throwable error) {
-			new Task.Cpu<Void, NoException>("Call Server.acceptError", Task.PRIORITY_RATHER_LOW) {
-				@Override
-				public Void run() {
-					server.acceptError(IO.error(error));
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Server.acceptError", Task.Priority.RATHER_LOW, t -> {
+				server.acceptError(IO.error(error));
+				return null;
+			}).start();
 		}
 		
 		private void connected(Client client) {
-			new Task.Cpu<Void, NoException>("Call Client.connected", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					client.connected();
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Client.connected", Task.Priority.NORMAL, t -> {
+				client.connected();
+				return null;
+			}).start();
 		}
 		
 		private void connectionFailed(Client client, Throwable error) {
-			new Task.Cpu<Void, NoException>("Call Client.connectionFailed", Task.PRIORITY_RATHER_LOW) {
-				@Override
-				public Void run() {
-					client.connectionFailed(IO.error(error));
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Client.connectionFailed", Task.Priority.RATHER_LOW, t -> {
+				client.connectionFailed(IO.error(error));
+				return null;
+			}).start();
 		}
 		
 		private void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
-			new Task.Cpu<Void, NoException>("Call TCPReceiver.received", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					buffer.flip();
-					if (dataLogger.trace()) {
-						StringBuilder s = new StringBuilder(nb * 5 + 256);
-						s.append(nb).append(" bytes received on ");
-						s.append(channel.toString());
-						s.append("\r\n");
-						DebugUtil.dumpHex(s, buffer);
-						dataLogger.trace(s.toString());
-					}
-					receiver.received(buffer);
-					return null;
+			Task.cpu("Call TCPReceiver.received", Task.Priority.NORMAL, t -> {
+				buffer.flip();
+				if (dataLogger.trace()) {
+					StringBuilder s = new StringBuilder(nb * 5 + 256);
+					s.append(nb).append(" bytes received on ");
+					s.append(channel.toString());
+					s.append("\r\n");
+					DebugUtil.dumpHex(s, buffer);
+					dataLogger.trace(s.toString());
 				}
-			}.start();
+				receiver.received(buffer);
+				return null;
+			}).start();
 		}
 		
 		private void dataReceived(UDPReceiver receiver, ByteBuffer buffer, SocketAddress source) {
-			new Task.Cpu<Void, NoException>("Call UDPReceiver.received", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					buffer.flip();
-					receiver.received(buffer, source);
-					return null;
-				}
-			}.start();
+			Task.cpu("Call UDPReceiver.received", Task.Priority.NORMAL, t -> {
+				buffer.flip();
+				receiver.received(buffer, source);
+				return null;
+			}).start();
 		}
 		
 		private void endOfInput(TCPReceiver receiver, ByteBuffer buffer) {
-			new Task.Cpu<Void, NoException>("Call TCPReceiver.endOfInput", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					receiver.endOfInput(buffer);
-					return null;
-				}
-			}.start();
+			Task.cpu("Call TCPReceiver.endOfInput", Task.Priority.NORMAL, t -> {
+				receiver.endOfInput(buffer);
+				return null;
+			}).start();
 		}
 		
 		private void receiveError(Receiver client, Throwable error, ByteBuffer buffer) {
-			new Task.Cpu<Void, NoException>("Call Receiver.receiveError", Task.PRIORITY_RATHER_LOW) {
-				@Override
-				public Void run() {
-					client.receiveError(IO.error(error), buffer);
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Receiver.receiveError", Task.Priority.RATHER_LOW, t -> {
+				client.receiveError(IO.error(error), buffer);
+				return null;
+			}).start();
 		}
 
 		private void readyToSend(Sender sender) {
-			new Task.Cpu<Void, NoException>("Call Sender.readyToSend", Task.PRIORITY_NORMAL) {
-				@Override
-				public Void run() {
-					sender.readyToSend();
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Sender.readyToSend", Task.Priority.NORMAL, t -> {
+				sender.readyToSend();
+				return null;
+			}).start();
 		}
 		
 		private void sendTimeout(Sender sender) {
-			new Task.Cpu<Void, NoException>("Call Sender.sendTimeout", Task.PRIORITY_RATHER_LOW) {
-				@Override
-				public Void run() {
-					sender.sendTimeout();
-					return null;
-				}
-			}.start();
+			Task.cpu("Call Sender.sendTimeout", Task.Priority.RATHER_LOW, t -> {
+				sender.sendTimeout();
+				return null;
+			}).start();
 		}
 
 	}
 	
 	private static void channelClosed(Listener listener) {
-		new Task.Cpu<Void, NoException>("Call Listener.channelClosed", Task.PRIORITY_RATHER_LOW) {
-			@Override
-			public Void run() {
-				if (listener != null)
-					listener.channelClosed();
-				return null;
-			}
-		}.start();
+		Task.cpu("Call Listener.channelClosed", Task.Priority.RATHER_LOW, t -> {
+			if (listener != null)
+				listener.channelClosed();
+			return null;
+		}).start();
 	}
 	
 }

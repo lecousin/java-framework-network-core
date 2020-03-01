@@ -39,7 +39,7 @@ public class TestSSLClient extends AbstractNetworkTest {
 			
 			try (TCPClient client = new TCPClient()) {
 				client.connect(serverAddress, 10000).blockThrow(0);
-				client.send(ByteBuffer.wrap(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 }));
+				client.send(ByteBuffer.wrap(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 }), 5000);
 				client.receiveData(3, 10000).blockThrow(0);
 			}
 		}

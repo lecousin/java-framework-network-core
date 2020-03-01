@@ -23,7 +23,7 @@ public class TestClientErrors extends AbstractTestTCP {
 	@Test
 	public void testSendWithoutConnection() throws Exception {
 		try (TCPClient client = useSSL ? new SSLClient() : new TCPClient()) {
-			client.send(ByteBuffer.wrap(new byte[] { 50 })).blockThrow(10000);
+			client.send(ByteBuffer.wrap(new byte[] { 50 }), 5000).blockThrow(10000);
 			throw new AssertionError("Sending data using a not connected client must throw an IOException");
 		} catch (IOException e) {
 			// ok

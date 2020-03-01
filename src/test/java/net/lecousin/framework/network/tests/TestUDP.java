@@ -9,8 +9,8 @@ import java.nio.channels.DatagramChannel;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.UDPClient;

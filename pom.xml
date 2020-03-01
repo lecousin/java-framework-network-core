@@ -50,14 +50,26 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <sonar.test.exclusions>**/src/test/**/*</sonar.test.exclusions>
+    <core.version>0.20.0</core.version>
+    <serialization.version>0.3.0</serialization.version>
   </properties>
 
   <dependencies>
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.16.4</version>
+		<version>${core.version}</version>
   	</dependency>
+    <dependency>
+      <groupId>net.lecousin.framework</groupId>
+      <artifactId>serialization-api</artifactId>
+      <version>${serialization.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.lecousin.framework</groupId>
+      <artifactId>xml</artifactId>
+      <version>${serialization.version}</version>
+    </dependency>
   	<dependency>
   		<groupId>junit</groupId>
   		<artifactId>junit</artifactId>
@@ -67,7 +79,7 @@
   	<dependency>
   		<groupId>net.lecousin</groupId>
   		<artifactId>core</artifactId>
-		<version>0.16.4</version>
+		<version>${core.version}</version>
   		<type>test-jar</type>
   		<scope>test</scope>
   	</dependency>

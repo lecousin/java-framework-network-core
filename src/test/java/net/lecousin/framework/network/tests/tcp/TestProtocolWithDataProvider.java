@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
+import java.util.Collections;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.function.Supplier;
 
 import net.lecousin.framework.application.LCCore;
@@ -27,11 +29,8 @@ public class TestProtocolWithDataProvider extends AbstractTestTCP {
 	private static class MyProtocol implements ServerProtocol {
 
 		@Override
-		public void startProtocol(TCPServerClient client) {
-			try { client.waitForData(10000); }
-			catch (ClosedChannelException e) {
-				e.printStackTrace(System.err);
-			}
+		public int startProtocol(TCPServerClient client) {
+			return 10000;
 		}
 
 		@Override
@@ -40,12 +39,11 @@ public class TestProtocolWithDataProvider extends AbstractTestTCP {
 		}
 
 		@Override
-		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 			Async<IOException> sp = new Async<>();
-			Supplier<ByteBuffer> dataProvider = () -> data;
-			client.newDataToSendWhenPossible(dataProvider, sp);
+			Supplier<List<ByteBuffer>> dataProvider = () -> Collections.singletonList(data);
+			client.newDataToSendWhenPossible(dataProvider, sp, 5000);
 			sp.onDone(() -> {
-				onbufferavailable.run();
 				try { client.waitForData(10000); }
 				catch (ClosedChannelException e) {
 					e.printStackTrace(System.err);
@@ -54,10 +52,10 @@ public class TestProtocolWithDataProvider extends AbstractTestTCP {
 		}
 
 		@Override
-		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
-			LinkedList<ByteBuffer> list = new LinkedList<>();
-			list.add(data);
-			return list;
+		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, List<ByteBuffer> data) {
+			if (data instanceof LinkedList)
+				return (LinkedList<ByteBuffer>)data;
+			return new LinkedList<>(data);
 		}
 		
 	}
@@ -77,7 +75,7 @@ public class TestProtocolWithDataProvider extends AbstractTestTCP {
 		for (int i = 0; i < data.length; ++i)
 			data[i] = (byte)i;
 		for (int i = 0; i < 10; ++i)
-			client.send(ByteBuffer.wrap(data));
+			client.send(ByteBuffer.wrap(data).asReadOnlyBuffer(), 5000);
 		for (int i = 0; i < 10; ++i)
 			Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
 		client.close();

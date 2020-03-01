@@ -8,13 +8,14 @@ import java.util.Random;
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.ArrayUtil;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.encoding.EncodingException;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.security.BruteForceAttempt;
 import net.lecousin.framework.network.security.NetworkSecurity;
-import net.lecousin.framework.util.StringUtil;
+import net.lecousin.framework.text.StringUtil;
 
 /**
  * Adds some security checks for sessions:
@@ -95,17 +96,22 @@ public class NetworkSessionProvider implements SessionProvider<TCPRemote> {
 		if (loadSession.isDone()) {
 			check.run();
 		} else {
-			loadSession.thenStart(new Task.Cpu.FromRunnable("Check newtork session", Task.PRIORITY_NORMAL, check), true);
+			loadSession.thenStart("Check newtork session", Task.Priority.NORMAL, check, true);
 		}
 		return result;
 	}
 	
 	private Session checkSession(Session s, TCPRemote client, String ts, String r, String sid) {
-		if (StringUtil.decodeHexaLong(r) != ((Long)s.getData("_nsrd")).longValue()) {
-			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
-			return null;
-		}
-		if (StringUtil.decodeHexaLong(ts) != ((Long)s.getData("_nsts")).longValue()) {
+		try {
+			if (StringUtil.decodeHexaLong(r) != ((Long)s.getData("_nsrd")).longValue()) {
+				NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
+				return null;
+			}
+			if (StringUtil.decodeHexaLong(ts) != ((Long)s.getData("_nsts")).longValue()) {
+				NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
+				return null;
+			}
+		} catch (EncodingException e) {
 			NetworkSecurity.get(app).getFeature(BruteForceAttempt.class).attempt(client, BRUTE_FORCE_FUNCTIONALITY, sid);
 			return null;
 		}

@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -13,12 +14,11 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
-import net.lecousin.framework.concurrent.async.JoinPoint;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.ssl.SSLLayer;
@@ -147,17 +147,12 @@ public class SSLClient extends TCPClient {
 		public IAsync<IOException> sendEmpty(ByteBuffer data) {
 			LinkedList<ByteBuffer> b;
 			try {
-				b = ssl.encryptDataToSend(this, data);
+				b = ssl.encryptDataToSend(this, Collections.singletonList(data));
 			} catch (SSLException e) {
 				return new Async<>(e);
 			}
 			if (!b.isEmpty()) {
-				do {
-					ByteBuffer buffer = b.removeFirst();
-					IAsync<IOException> send = SSLClient.super.send(buffer);
-					if (b.isEmpty())
-						return send;
-				} while (true);
+				return SSLClient.super.send(b, 10000);
 			}
 			return new Async<>(new SSLException("Error encrypting data"));
 		}
@@ -202,17 +197,14 @@ public class SSLClient extends TCPClient {
 		Async<IOException> result = new Async<>();
 		setAttribute(CONNECT_ATTRIBUTE, result);
 		Async<IOException> conn = super.connect(address, timeout, options);
-		conn.thenStart(new Task.Cpu<Void, NoException>("Start SSL protocol for TCPClient", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				if (!conn.isSuccessful()) {
-					removeAttribute(CONNECT_ATTRIBUTE);
-					conn.forwardIfNotSuccessful(result);
-					return null;
-				}
-				ssl.startConnection(sslClient, true, timeout);
+		conn.thenStart("Start SSL protocol for TCPClient", Task.Priority.NORMAL, (Task<Void, NoException> t) -> {
+			if (!conn.isSuccessful()) {
+				removeAttribute(CONNECT_ATTRIBUTE);
+				conn.forwardIfNotSuccessful(result);
 				return null;
 			}
+			ssl.startConnection(sslClient, true, timeout);
+			return null;
 		}, true);
 		return result;
 	}
@@ -226,13 +218,10 @@ public class SSLClient extends TCPClient {
 		setAttribute(CONNECT_ATTRIBUTE, connection);
 		channel = tunnel.channel;
 		closed = false;
-		new Task.Cpu<Void, NoException>("Start SSL protocol for TCPClient through tunnel", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				ssl.startConnection(sslClient, true, timeout);
-				return null;
-			}
-		}.start();
+		Task.cpu("Start SSL protocol for TCPClient through tunnel", Task.Priority.NORMAL, t -> {
+			ssl.startConnection(sslClient, true, timeout);
+			return null;
+		}).start();
 	}
 	
 	@Override
@@ -276,30 +265,27 @@ public class SSLClient extends TCPClient {
 			previous = lastReceiveDecrypted;
 			lastReceiveDecrypted = decrypted;
 		}
-		Task.Cpu<Void, NoException> task = new Task.Cpu<Void, NoException>("Receive SSL data from server", Task.PRIORITY_NORMAL) {
-			@SuppressWarnings("unchecked")
-			@Override
-			public Void run() {
-				if (!receive.isSuccessful()) {
-					LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>> list;
-					synchronized (sslClient) {
-						list = (LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>>)
-							removeAttribute(WAITING_DATA_ATTRIBUTE);
-					}
-					if (list != null)
-						for (Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> t : list)
-							receive.forwardIfNotSuccessful(t.getValue1());
-					return null;
+		@SuppressWarnings("unchecked")
+		Task<Void, NoException> task = Task.cpu("Receive SSL data from server", Task.Priority.NORMAL, taskCtx -> {
+			if (!receive.isSuccessful()) {
+				LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>> list;
+				synchronized (sslClient) {
+					list = (LinkedList<Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer>>)
+						removeAttribute(WAITING_DATA_ATTRIBUTE);
 				}
-				ByteBuffer b = receive.getResult();
-				if (b == null) {
-					close();
-					return null;
-				}
-				ssl.dataReceived(sslClient, b, null, timeout);
+				if (list != null)
+					for (Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> t : list)
+						receive.forwardIfNotSuccessful(t.getValue1());
 				return null;
 			}
-		};
+			ByteBuffer b = receive.getResult();
+			if (b == null) {
+				close();
+				return null;
+			}
+			ssl.dataReceived(sslClient, b, timeout);
+			return null;
+		});
 		receive.onDone(() -> {
 			if (previous == null) task.start();
 			else previous.thenStart(task, true);
@@ -310,32 +296,26 @@ public class SSLClient extends TCPClient {
 	private Async<IOException> lastSend = null;
 	
 	@Override
-	public Async<IOException> send(ByteBuffer data) {
+	public Async<IOException> send(List<ByteBuffer> data, int timeout) {
 		Async<IOException> result = new Async<>();
-		Task.Cpu<Void, NoException> task = new Task.Cpu<Void, NoException>("Encrypting SSL data", Task.PRIORITY_NORMAL) {
-			@Override
-			public Void run() {
-				LinkedList<ByteBuffer> encrypted;
-				try {
-					encrypted = ssl.encryptDataToSend(sslClient, data);
-				} catch (SSLException e) {
-					result.error(e);
-					return null;
-				}
-				JoinPoint<IOException> jp = new JoinPoint<>();
-				do {
-					ByteBuffer b = encrypted.removeFirst();
-					jp.addToJoin(SSLClient.super.send(b));
-				} while (!encrypted.isEmpty());
-				jp.start();
-				jp.onDone(result);
+		Task<Void, NoException> task = Task.cpu("Encrypting SSL data", Task.Priority.NORMAL, t -> {
+			LinkedList<ByteBuffer> encrypted;
+			try {
+				encrypted = ssl.encryptDataToSend(sslClient, data);
+			} catch (SSLException e) {
+				result.error(e);
 				return null;
 			}
-		};
+			SSLClient.super.send(encrypted, timeout).onDone(result);
+			return null;
+		});
 		Async<IOException> previous = lastSend;
 		lastSend = result;
 		if (previous == null) task.start();
-		else task.startOn(previous, false);
+		else {
+			task.startOn(previous, false);
+			previous.onError(result::error);
+		}
 		return result;
 	}
 	

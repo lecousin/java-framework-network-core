@@ -9,6 +9,7 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.async.Async;
@@ -93,7 +94,7 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		TCPClient client = connectClient();
 		Assert.assertArrayEquals("Welcome\n".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(8, 10000).blockResult(0));
 		Async<IOException> sp = new Async<>();
-		client.newDataToSendWhenPossible(() -> ByteBuffer.wrap("test".getBytes()), sp);
+		client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("test".getBytes())), sp, 5000);
 		client.close();
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
@@ -111,7 +112,7 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
 		Assert.assertArrayEquals(new byte[] { '\n' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
 		Async<IOException> sp = new Async<>();
-		client.newDataToSendWhenPossible(() -> ByteBuffer.wrap("test".getBytes()), sp);
+		client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("test".getBytes())), sp, 5000);
 		client.close();
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
@@ -211,7 +212,7 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 			try {
 				byte[] buf = client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0);
 				Assert.assertEquals("Buffer " + i, 1024 * 1024, buf.length);
-				Assert.assertEquals(i, DataUtil.readIntegerLittleEndian(buf, i));
+				Assert.assertEquals(i, DataUtil.Read32.LE.read(buf, i));
 			} catch (IOException e) {
 				throw new Exception("Error reading buffer " + i, e);
 			}

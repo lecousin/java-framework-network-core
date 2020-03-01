@@ -3,7 +3,6 @@ package net.lecousin.framework.network.tests.tcp;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.util.LinkedList;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.log.Logger.Level;
@@ -24,11 +23,8 @@ public class TestTCPEchoProtocol extends AbstractTestTCP {
 	private static class EchoProtocol implements ServerProtocol {
 
 		@Override
-		public void startProtocol(TCPServerClient client) {
-			try { client.waitForData(10000); }
-			catch (ClosedChannelException e) {
-				e.printStackTrace(System.err);
-			}
+		public int startProtocol(TCPServerClient client) {
+			return 10000;
 		}
 
 		@Override
@@ -37,22 +33,14 @@ public class TestTCPEchoProtocol extends AbstractTestTCP {
 		}
 
 		@Override
-		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 			System.out.println("Received from echo client: " + data.remaining());
-			client.send(data).onDone(() -> {
-				onbufferavailable.run();
+			client.send(data, 5000).onDone(() -> {
 				try { client.waitForData(10000); }
 				catch (ClosedChannelException e) {
 					e.printStackTrace(System.err);
 				}
 			});
-		}
-
-		@Override
-		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
-			LinkedList<ByteBuffer> list = new LinkedList<>();
-			list.add(data);
-			return list;
 		}
 		
 	}
@@ -72,9 +60,9 @@ public class TestTCPEchoProtocol extends AbstractTestTCP {
 		for (int i = 0; i < data.length; ++i)
 			data[i] = (byte)i;
 		for (int i = 0; i < 10; ++i)
-			client.send(ByteBuffer.wrap(data));
+			client.send(ByteBuffer.wrap(data).asReadOnlyBuffer(), 5000);
 		for (int i = 0; i < 10; ++i)
-			Assert.assertArrayEquals(data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
+			Assert.assertArrayEquals("Array " + i, data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
 		client.close();
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);

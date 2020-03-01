@@ -9,8 +9,8 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
 import net.lecousin.framework.collections.TurnArray;
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -38,7 +38,7 @@ public class UDPClient implements Closeable {
 		
 		@Override
 		public void sendTimeout() {
-			// nothing
+			close();
 		}
 		
 		@Override

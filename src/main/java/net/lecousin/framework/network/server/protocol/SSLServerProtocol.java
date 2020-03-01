@@ -4,12 +4,15 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.GeneralSecurityException;
+import java.util.Collections;
 import java.util.LinkedList;
+import java.util.List;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.ssl.SSLLayer;
 
@@ -82,7 +85,10 @@ public class SSLServerProtocol implements ServerProtocol {
 		@Override
 		public void handshakeDone() {
 			// start the next protocol
-			protocol.startProtocol(client);
+			int recvTimeout = protocol.startProtocol(client);
+			if (recvTimeout >= 0)
+				try { client.waitForData(recvTimeout); }
+				catch (ClosedChannelException e) { client.closed(); }
 		}
 		
 		@Override
@@ -107,17 +113,20 @@ public class SSLServerProtocol implements ServerProtocol {
 				int total = 0;
 				for (ByteBuffer b : data) total += b.remaining();
 				if (total == 0) return;
-				buf = ByteBuffer.allocate(total);
-				for (ByteBuffer b : data)
+				ByteArrayCache cache = ByteArrayCache.getInstance();
+				buf = ByteBuffer.wrap(cache.get(total, true));
+				for (ByteBuffer b : data) {
 					buf.put(b);
+					cache.free(b);
+				}
 				buf.flip();
 			}
-			protocol.dataReceivedFromClient(client, buf, () -> { });
+			protocol.dataReceivedFromClient(client, buf);
 		}
 		
 		@Override
 		public Async<IOException> sendEmpty(ByteBuffer data) throws ClosedChannelException {
-			return client.send(data, false);
+			return client.send(Collections.singletonList(data), 10000, false);
 		}
 		
 		@Override
@@ -129,10 +138,11 @@ public class SSLServerProtocol implements ServerProtocol {
 	private static final String ATTRIBUTE_SSL_CLIENT = "SSLServerProtocol.client";
 	
 	@Override
-	public void startProtocol(TCPServerClient client) {
+	public int startProtocol(TCPServerClient client) {
 		Client c = new Client(client);
 		client.setAttribute(ATTRIBUTE_SSL_CLIENT, c);
 		ssl.startConnection(c, false, 30000);
+		return -1;
 	}
 	
 	@Override
@@ -141,13 +151,13 @@ public class SSLServerProtocol implements ServerProtocol {
 	}
 	
 	@Override
-	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
-		ssl.dataReceived(c, data, onbufferavailable, 30000);
+		ssl.dataReceived(c, data, 30000);
 	}
 	
 	@Override
-	public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
+	public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, List<ByteBuffer> data) {
 		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
 		try {
 			return ssl.encryptDataToSend(c, data);

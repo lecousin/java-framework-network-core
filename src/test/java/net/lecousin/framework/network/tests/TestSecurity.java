@@ -11,13 +11,11 @@ import java.util.Map;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.JoinPoint;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
 import net.lecousin.framework.io.IO;
-import net.lecousin.framework.io.serialization.SerializationException;
-import net.lecousin.framework.io.serialization.TypeDefinition;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.security.BruteForceAttempt;
@@ -29,6 +27,8 @@ import net.lecousin.framework.network.security.NetworkSecurityPlugin;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.tests.tcp.WelcomeProtocol;
 import net.lecousin.framework.plugins.ExtensionPoints;
+import net.lecousin.framework.serialization.SerializationException;
+import net.lecousin.framework.serialization.TypeDefinition;
 import net.lecousin.framework.xml.serialization.XMLDeserializer;
 
 import org.junit.Assert;
@@ -212,7 +212,7 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Map<Class<?>, Object> instances = new HashMap<>();
 		JoinPoint<Exception> jp = new JoinPoint<>();
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
-			IO.Readable input = app.getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.PRIORITY_NORMAL);
+			IO.Readable input = app.getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.Priority.NORMAL);
 			AsyncSupplier<Object, SerializationException> res =
 				new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
 					new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));

@@ -5,11 +5,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.encoding.EncodingException;
 import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
-import net.lecousin.framework.io.serialization.TypeDefinition;
-import net.lecousin.framework.io.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.network.NetUtil;
+import net.lecousin.framework.serialization.TypeDefinition;
+import net.lecousin.framework.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.xml.serialization.XMLDeserializer;
 import net.lecousin.framework.xml.serialization.XMLSerializer;
 
@@ -19,7 +20,7 @@ import org.junit.Test;
 public class TestNetUtil extends LCCoreAbstractTest {
 
 	@Test
-	public void testMACFromString() {
+	public void testMACFromString() throws EncodingException {
 		Assert.assertArrayEquals(
 			new byte[] { 1, 2, 3, 4, 5, 6 },
 			NetUtil.MACFromString("01:02:03:04:05:06")
@@ -35,7 +36,7 @@ public class TestNetUtil extends LCCoreAbstractTest {
 	}
 	
 	@Test
-	public void testIPv4FromString() {
+	public void testIPv4FromString() throws EncodingException {
 		Assert.assertArrayEquals(
 			new byte[] { 10, (byte)245, 0, 12 },
 			NetUtil.IPv4FromString("10.245.0.12")
@@ -51,7 +52,7 @@ public class TestNetUtil extends LCCoreAbstractTest {
 	}
 	
 	@Test
-	public void testIPv6FromString() {
+	public void testIPv6FromString() throws EncodingException {
 		Assert.assertArrayEquals(
 			new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
 			NetUtil.IPv6FromString("::1")
@@ -63,7 +64,7 @@ public class TestNetUtil extends LCCoreAbstractTest {
 	}
 	
 	@Test
-	public void testIPFromString() {
+	public void testIPFromString() throws EncodingException {
 		Assert.assertArrayEquals(
 			new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0x23 },
 			NetUtil.IPFromString("::123")

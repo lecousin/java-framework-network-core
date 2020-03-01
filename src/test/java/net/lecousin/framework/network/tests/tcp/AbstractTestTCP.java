@@ -12,8 +12,8 @@ import java.util.Collection;
 
 import javax.net.SocketFactory;
 
+import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -153,10 +153,10 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 	private static void sendLine(TCPClient client, byte[] message, int pos) throws Exception {
 		int rem = message.length - pos;
 		if (rem < 3) {
-			client.send(ByteBuffer.wrap(message, pos, rem));
-			client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }));
+			client.send(ByteBuffer.wrap(message, pos, rem), 10000);
+			client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }), 5000);
 		} else {
-			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1));
+			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1), 5000);
 			sendLine(client, message, pos + rem / 2 + 1);
 		}
 	}

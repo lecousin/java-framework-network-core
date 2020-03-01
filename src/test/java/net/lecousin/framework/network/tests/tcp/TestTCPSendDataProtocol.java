@@ -2,7 +2,6 @@ package net.lecousin.framework.network.tests.tcp;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.LinkedList;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.async.Async;
@@ -38,7 +37,7 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 	private static void sendDataLoop(TCPRemote remote) {
 		byte[][] data = generateDataToSend();
 		for (int i = 0; i < NB_BLOCKS; ++i) {
-			remote.send(ByteBuffer.wrap(data[i]));
+			remote.send(ByteBuffer.wrap(data[i]), 5000);
 			if ((i % 20) == 0)
 				try { Thread.sleep(400); }
 				catch (InterruptedException e) {}
@@ -51,13 +50,14 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 	private static class SendDataProtocol implements ServerProtocol {
 
 		@Override
-		public void startProtocol(TCPServerClient client) {
+		public int startProtocol(TCPServerClient client) {
 			new Thread() {
 				@Override
 				public void run() {
 					sendDataLoop(client);
 				}
 			}.start();
+			return -1;
 		}
 
 		@Override
@@ -66,16 +66,8 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 		}
 
 		@Override
-		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+		public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 			client.close();
-			onbufferavailable.run();
-		}
-
-		@Override
-		public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
-			LinkedList<ByteBuffer> list = new LinkedList<>();
-			list.add(data);
-			return list;
 		}
 		
 	}

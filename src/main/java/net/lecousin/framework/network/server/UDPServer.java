@@ -7,9 +7,8 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.exception.NoException;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.Pair;
 
@@ -43,7 +42,7 @@ public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel
 	/** Listen to the given address. */
 	public AsyncSupplier<SocketAddress, IOException> bind(SocketAddress local) {
 		AsyncSupplier<SocketAddress, IOException> result = new AsyncSupplier<>();
-		new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+		Task.cpu("Bind server", Task.Priority.IMPORTANT, t -> {
 			DatagramChannel channel;
 			try {
 				channel = DatagramChannel.open();
@@ -51,11 +50,12 @@ public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel
 				channel.configureBlocking(false);
 			} catch (IOException e) {
 				result.error(e);
-				return;
+				return null;
 			}
 			Channel c = new Channel(channel);
 			AsyncSupplier<SelectionKey, IOException> accept = manager.register(channel, SelectionKey.OP_READ, c, 0);
 			finalizeBinding(accept, c, channel, result);
+			return null;
 		}).start();
 		return result;
 	}
@@ -106,34 +106,31 @@ public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel
 		
 		@Override
 		public void readyToSend() {
-			new Task.Cpu<Void, NoException>("Sending datagrams to UDP clients", Task.PRIORITY_RATHER_IMPORTANT) {
-				@Override
-				public Void run() {
-					synchronized (sendQueue) {
-						while (!sendQueue.isEmpty()) {
-							Pair<SocketAddress,ByteBuffer> toSend = sendQueue.getFirst();
-							int nb;
-							try {
-								nb = channel.send(toSend.getValue2(), toSend.getValue1());
-							} catch (IOException e) {
-								// error while sending data, just skip it
-								sendQueue.removeFirst();
-								continue;
-							}
-							if (nb == 0) break; // cannot write anymore
-							if (!toSend.getValue2().hasRemaining())
-								sendQueue.removeFirst();
+			Task.cpu("Sending datagrams to UDP clients", Task.Priority.RATHER_IMPORTANT, t -> {
+				synchronized (sendQueue) {
+					while (!sendQueue.isEmpty()) {
+						Pair<SocketAddress,ByteBuffer> toSend = sendQueue.getFirst();
+						int nb;
+						try {
+							nb = channel.send(toSend.getValue2(), toSend.getValue1());
+						} catch (IOException e) {
+							// error while sending data, just skip it
+							sendQueue.removeFirst();
+							continue;
 						}
-						if (sendQueue.isEmpty()) {
-							// no more data to send
-							return null;
-						}
+						if (nb == 0) break; // cannot write anymore
+						if (!toSend.getValue2().hasRemaining())
+							sendQueue.removeFirst();
 					}
-					// still something to write, we need to register to the network manager
-					manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
-					return null;
+					if (sendQueue.isEmpty()) {
+						// no more data to send
+						return null;
+					}
 				}
-			}.start();
+				// still something to write, we need to register to the network manager
+				manager.register(channel, SelectionKey.OP_WRITE, Channel.this, 0);
+				return null;
+			}).start();
 		}
 		
 	}

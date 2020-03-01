@@ -4,10 +4,10 @@ import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedList;
 
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.io.util.DataUtil;
+import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 
@@ -16,13 +16,9 @@ import org.junit.Assert;
 public class WelcomeProtocol implements ServerProtocol {
 
 	@Override
-	public void startProtocol(TCPServerClient client) {
-		client.send(ByteBuffer.wrap(new String("Welcome\n").getBytes(StandardCharsets.US_ASCII)));
+	public int startProtocol(TCPServerClient client) {
+		client.send(ByteBuffer.wrap(new String("Welcome\n").getBytes(StandardCharsets.US_ASCII)), 5000);
 		client.setAttribute("welcome", Boolean.TRUE);
-		try { client.waitForData(10000); }
-		catch (ClosedChannelException e) {
-			e.printStackTrace(System.err);
-		}
 		Closeable c = new Closeable() { @Override public void close() {} };
 		client.addToClose(c);
 		client.removeToClose(c);
@@ -37,6 +33,7 @@ public class WelcomeProtocol implements ServerProtocol {
 		} catch (Throwable t) {
 			t.printStackTrace(System.err);
 		}
+		return 10000;
 	}
 
 	@Override
@@ -45,7 +42,7 @@ public class WelcomeProtocol implements ServerProtocol {
 	}
 
 	@Override
-	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data, Runnable onbufferavailable) {
+	public void dataReceivedFromClient(TCPServerClient client, ByteBuffer data) {
 		System.out.println("Received from client: " + data.remaining());
 		Assert.assertNotNull(client.getServer());
 		int timeout = 10000;
@@ -61,34 +58,27 @@ public class WelcomeProtocol implements ServerProtocol {
 				String s = msg.toString();
 				if (!s.startsWith("I'm ")) {
 					if (!s.equals("flood me")) {
-						client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)));
+						client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)), 5000);
 						client.close();
 						break;
 					}
 					for (int i = 0; i < 1000; ++i) {
 						byte[] buf = new byte[1024 * 1024];
-						DataUtil.writeIntegerLittleEndian(buf, i, i);
-						client.send(ByteBuffer.wrap(buf));
+						DataUtil.Write32.LE.write(buf, i, i);
+						client.send(ByteBuffer.wrap(buf), 5000);
 					}
 					timeout = 1200000;
 					break;
 				}
-				client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)));
+				client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)), 5000);
 				client.removeAttribute("reading");
 				continue;
 			}
 			msg.append((char)b);
 		}
-		onbufferavailable.run();
+		ByteArrayCache.getInstance().free(data);
 		try { client.waitForData(timeout); }
 		catch (ClosedChannelException e) {}
 	}
 
-	@Override
-	public LinkedList<ByteBuffer> prepareDataToSend(TCPServerClient client, ByteBuffer data) {
-		LinkedList<ByteBuffer> list = new LinkedList<>();
-		list.add(data);
-		return list;
-	}
-	
 }

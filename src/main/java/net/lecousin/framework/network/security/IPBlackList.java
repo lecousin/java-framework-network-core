@@ -9,10 +9,10 @@ import java.util.Iterator;
 import java.util.Map;
 
 import net.lecousin.framework.application.Application;
-import net.lecousin.framework.io.serialization.annotations.TypeSerializer;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.NetUtil;
+import net.lecousin.framework.serialization.annotations.TypeSerializer;
 
 /** Black list of IP addresses. */
 public class IPBlackList implements NetworkSecurityFeature {
@@ -82,8 +82,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 					}
 				if (cfgCat.ipv6 != null)
 					for (Config.IP ip : cfgCat.ipv6) {
-						Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 0));
-						Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip.ip, 8));
+						Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ip.ip, 0));
+						Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ip.ip, 8));
 						Map<Long,Long> m = cat.ipv6.get(ip1);
 						if (m == null) {
 							m = new HashMap<>(20);
@@ -120,8 +120,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 					for (Map.Entry<Long, Long> e2 : e1.getValue().entrySet()) {
 						Config.IP ip = new Config.IP();
 				        ip.ip = new byte[16];
-						DataUtil.writeLongLittleEndian(ip.ip, 0, e1.getKey().longValue());
-						DataUtil.writeLongLittleEndian(ip.ip, 8, e2.getKey().longValue());
+						DataUtil.Write64.LE.write(ip.ip, 0, e1.getKey().longValue());
+						DataUtil.Write64.LE.write(ip.ip, 8, e2.getKey().longValue());
 						ip.expiration = e2.getValue().longValue();
 						cat.ipv6.add(ip);
 					}
@@ -163,8 +163,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 	/** Return true if the given address can be accepted for a connection. */
 	public boolean acceptAddress(Inet6Address address) {
 		byte[] ip = address.getAddress();
-		Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
-		Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
+		Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ip, 0));
+		Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ip, 8));
 		synchronized (this) {
 			for (Category cat : categories) {
 				Map<Long,Long> map = cat.ipv6.get(ip1);
@@ -211,8 +211,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 				}
 			} else if (address instanceof Inet6Address) {
 				byte[] ip = address.getAddress();
-				Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
-				Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
+				Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ip, 0));
+				Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ip, 8));
 				Map<Long,Long> map = cat.ipv6.get(ip1);
 				if (map == null) {
 					map = new HashMap<>(20);
@@ -250,8 +250,8 @@ public class IPBlackList implements NetworkSecurityFeature {
 			}
 			if (address instanceof Inet6Address) {
 				byte[] ip = address.getAddress();
-				Long ip1 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 0));
-				Long ip2 = Long.valueOf(DataUtil.readLongLittleEndian(ip, 8));
+				Long ip1 = Long.valueOf(DataUtil.Read64.LE.read(ip, 0));
+				Long ip2 = Long.valueOf(DataUtil.Read64.LE.read(ip, 8));
 				Map<Long,Long> map = cat.ipv6.get(ip1);
 				if (map == null) return;
 				if (map.remove(ip2) != null) {

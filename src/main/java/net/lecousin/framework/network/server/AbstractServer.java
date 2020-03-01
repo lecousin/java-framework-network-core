@@ -13,9 +13,9 @@ import java.util.List;
 
 import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
-import net.lecousin.framework.concurrent.Task;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.network.NetworkManager;
 
 /** Abstract class for a server.
@@ -29,7 +29,7 @@ implements Closeable {
 	protected AbstractServer() {
 		app = LCCore.getApplication();
 		manager = NetworkManager.get(app);
-		app.toClose(this);
+		app.toClose(0, this);
 	}
 	
 	protected Application app;
@@ -72,7 +72,7 @@ implements Closeable {
 		AsyncSupplier<SelectionKey, IOException> accept, TServerChannel sc, TNetworkChannel channel,
 		AsyncSupplier<SocketAddress, IOException> result
 	) {
-		accept.thenStart(new Task.Cpu.FromRunnable("Bind server", Task.PRIORITY_IMPORTANT, () -> {
+		accept.thenStart("Bind server", Task.Priority.IMPORTANT, () -> {
 			sc.key = accept.getResult();
 			channels.add(sc);
 			try {
@@ -83,7 +83,7 @@ implements Closeable {
 			} catch (IOException e) {
 				result.error(e);
 			}
-		}), result);
+		}, result);
 	}
 	
 	

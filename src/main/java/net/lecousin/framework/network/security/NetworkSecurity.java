@@ -8,17 +8,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.lecousin.framework.application.Application;
-import net.lecousin.framework.concurrent.Task;
+import net.lecousin.framework.concurrent.CancelException;
+import net.lecousin.framework.concurrent.Executable;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
-import net.lecousin.framework.concurrent.async.CancelException;
 import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.async.JoinPoint;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.FileIO;
-import net.lecousin.framework.io.serialization.SerializationException;
-import net.lecousin.framework.io.serialization.TypeDefinition;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.plugins.ExtensionPoints;
+import net.lecousin.framework.serialization.SerializationException;
+import net.lecousin.framework.serialization.TypeDefinition;
 import net.lecousin.framework.xml.serialization.XMLDeserializer;
 import net.lecousin.framework.xml.serialization.XMLSerializer;
 
@@ -55,13 +56,14 @@ public class NetworkSecurity {
 			logger.error("Unable to create directory " + appCfgDir.getAbsolutePath());
 		loadConfiguration(app, loaded);
 
-		Task<Void, NoException> taskSave = new Task.Cpu.FromRunnable("Save network security", Task.PRIORITY_LOW, this::save);
+		Task<Void, NoException> taskSave = Task.cpu("Save network security", Task.Priority.LOW, new Executable.FromRunnable(this::save));
 		taskSave.executeEvery(2L * 60 * 1000, 30L * 1000);
 		
-		Task<Void, NoException> taskClean = new Task.Cpu.FromRunnable("Cleaning network security", Task.PRIORITY_LOW, this::clean);
+		Task<Void, NoException> taskClean = Task.cpu("Cleaning network security", Task.Priority.LOW,
+			new Executable.FromRunnable(this::clean));
 		taskClean.executeEvery(5L * 60 * 1000, 10L * 60 * 1000);
 		
-		app.toClose(() -> {
+		app.toClose(100, () -> {
 			taskSave.cancel(new CancelException("Application stopping"));
 			taskClean.cancel(new CancelException("Application stopping"));
 			clean();
@@ -78,7 +80,7 @@ public class NetworkSecurity {
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
 			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
 			if (cfgFile.exists()) {
-				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.PRIORITY_IMPORTANT);
+				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.Priority.IMPORTANT);
 				AsyncSupplier<Object, SerializationException> res =
 					new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
 						new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
@@ -139,7 +141,7 @@ public class NetworkSecurity {
 					continue;
 				}
 			}
-			FileIO.WriteOnly output = new FileIO.WriteOnly(cfgFile, Task.PRIORITY_IMPORTANT);
+			FileIO.WriteOnly output = new FileIO.WriteOnly(cfgFile, Task.Priority.IMPORTANT);
 			IAsync<SerializationException> ser =
 				new XMLSerializer(null, plugin.getClass().getSimpleName(), null, StandardCharsets.UTF_8, 4096, true)
 					.serialize(cfg, new TypeDefinition(plugin.getConfigurationClass()), output, new ArrayList<>(0));
