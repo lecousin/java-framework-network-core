@@ -17,6 +17,11 @@ build_script:
   - mvn clean package --batch-mode -DskipTest
 test_script:
   - mvn test verify --batch-mode
+after_test:
+  - ps: |
+      $env:PATH = 'C:\msys64\usr\bin;' + $env:PATH
+      Invoke-WebRequest -Uri 'https://codecov.io/bash' -OutFile codecov.sh
+      bash codecov.sh -f target/site/jacoco/jacoco.xml
 cache:
   - C:\maven\
   - C:\Users\appveyor\.m2
