@@ -48,7 +48,9 @@ public class TestClientErrors extends AbstractTestTCP {
 			sp = client.connect(serverAddress, 10000);
 			try {
 				sp.blockThrow(0);
-				throw new AssertionError();
+				sp = client.connect(serverAddress, 10000);
+				sp = client.connect(serverAddress, 10000);
+				sp.blockThrow(0);
 			} catch (Exception e) {
 				// ok
 			}
