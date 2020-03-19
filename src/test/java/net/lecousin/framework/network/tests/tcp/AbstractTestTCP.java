@@ -153,10 +153,10 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 	private static void sendLine(TCPClient client, byte[] message, int pos) throws Exception {
 		int rem = message.length - pos;
 		if (rem < 3) {
-			client.send(ByteBuffer.wrap(message, pos, rem), 10000);
+			client.send(ByteBuffer.wrap(message, pos, rem).asReadOnlyBuffer(), 10000);
 			client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }), 5000);
 		} else {
-			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1), 5000);
+			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1).asReadOnlyBuffer(), 5000);
 			sendLine(client, message, pos + rem / 2 + 1);
 		}
 	}
