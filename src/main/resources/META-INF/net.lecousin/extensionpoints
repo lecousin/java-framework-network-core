@@ -1,1 +1,2 @@
 net.lecousin.framework.network.security.NetworkSecurityExtensionPoint
+net.lecousin.framework.network.name.NameServiceRegistry

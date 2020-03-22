@@ -19,7 +19,9 @@ import net.lecousin.framework.collections.ArrayUtil;
 @SuppressWarnings("squid:S00100") // methods' name
 public final class NetUtil {
 	
-	private NetUtil() { /* no instance */ }
+	private NetUtil() {
+		/* no instance */
+	}
 
 	/** Return the NetworkInterface corresponding to the given MAC address. */
 	public static NetworkInterface getInterfaceFromMAC(byte[] mac) throws SocketException {

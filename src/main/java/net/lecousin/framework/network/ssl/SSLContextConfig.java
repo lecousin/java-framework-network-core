@@ -25,7 +25,9 @@ public class SSLContextConfig {
 	public static class Store {
 		
 		/** Constructor. */
-		public Store() { }
+		public Store() {
+			// nothing
+		}
 
 		/** Constructor. */
 		public Store(String type, String url, String password) {
