@@ -163,7 +163,8 @@ public class SSLServerProtocol implements ServerProtocol {
 			return ssl.encryptDataToSend(c, data);
 		} catch (SSLException e) {
 			ssl.getLogger().error("Error encrypting SSL data to client", e);
-			return null;
+			client.close();
+			return new LinkedList<>();
 		}
 	}
 	

@@ -231,6 +231,8 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			}
 			closeAfterLastOutput = closeAfter;
 			lastSendTimeout = timeout;
+			if (channel == null || !channel.isConnected())
+				return new Async<>(new ClosedChannelException());
 			if (!waitBefore && dataToSendProvider == null)
 				manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
 			return sp;

@@ -58,7 +58,7 @@ public class SSLContextConfig {
 				kmf = KeyManagerFactory.getInstance(algo);
 			
 			if (kmf != null) {
-				kmf.init(ks, "password".toCharArray());
+				kmf.init(ks, config.keyStore.password.toCharArray());
 				keyManagers = kmf.getKeyManagers();
 			}
 		}

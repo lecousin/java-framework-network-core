@@ -124,7 +124,7 @@ public class SSLLayer {
 			Task<Void, NoException> task = handshakeTask(conn, timeout);
 			conn.setAttribute(HANDSHAKE_FOLLOWUP_ATTRIBUTE, task);
 			task.start();
-		} catch (SSLException e) {
+		} catch (Exception e) {
 			logger.error("Error starting SSL connection", e);
 			conn.close();
 		}
@@ -234,6 +234,8 @@ public class SSLLayer {
 				IAsync<IOException> send = conn.sendEmpty(emptyBuffer);
 				send.onDone(() -> {
 					if (send.hasError()) {
+						if (logger.error())
+							logger.error("Error sending empty data to " + conn, send.getError());
 						conn.close();
 						return;
 					}

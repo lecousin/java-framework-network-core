@@ -46,8 +46,6 @@ public class TCPServerClient extends AbstractAttributesContainer implements Clos
 		try { return send(data, timeout, false); }
 		catch (ClosedChannelException e) { return new Async<>(e); }
 	}
-
-	// TODO overwrite asConsumer because we are already able to keep buffers in toSend
 	
 	@Override
 	public boolean isClosed() {

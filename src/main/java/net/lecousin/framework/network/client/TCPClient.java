@@ -640,8 +640,6 @@ public class TCPClient extends AbstractAttributesContainer implements Closeable,
 		}
 	}
 	
-	// TODO overwrite asConsumer because we are already able to keep buffers in toSend
-	
 	@Override
 	public void close() {
 		if (closed) return;
