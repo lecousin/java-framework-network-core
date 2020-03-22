@@ -68,7 +68,7 @@ public class TestSSLClient extends AbstractNetworkTest {
 			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 			
 			try (SSLClient client = new SSLClient()) {
-				client.connect(serverAddress, 10000).blockThrow(0);
+				client.connect(serverAddress, 0).blockThrow(0);
 				throw new AssertionError();
 			} catch (Exception e) {
 				// ok

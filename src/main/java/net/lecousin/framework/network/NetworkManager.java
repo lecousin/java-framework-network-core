@@ -33,7 +33,7 @@ import net.lecousin.framework.util.DebugUtil;
 /**
  * The NetworkManager launches a thread to listen to network events using the Java NIO framework,
  * making its usage easier.<br/>
- * The method {@link #register(SelectableChannel, int, Listener)} is used to add a listener to a channel.<br/>
+ * The method {@link #register(SelectableChannel, int, Listener, int)} is used to add a listener to a channel.<br/>
  * The listeners are called in separate CPU tasks to avoid slowing down the NetworkManager's thread.
  */
 public class NetworkManager implements Closeable {
