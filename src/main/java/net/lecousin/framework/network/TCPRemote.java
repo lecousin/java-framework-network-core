@@ -1,5 +1,6 @@
 package net.lecousin.framework.network;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -13,7 +14,7 @@ import net.lecousin.framework.concurrent.util.AsyncConsumer;
 import net.lecousin.framework.concurrent.util.BufferedAsyncConsumer;
 
 /** Base interface for a TCP connection with a remote end-point. */
-public interface TCPRemote {
+public interface TCPRemote extends Closeable {
 	
 	/** Return the local address. */
 	SocketAddress getLocalAddress() throws IOException;
@@ -38,6 +39,9 @@ public interface TCPRemote {
 	 * this data will be send after the new send is finished.
 	 */
 	void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout);
+	
+	@Override
+	void close();
 	
 	/** Call the given listener when the TCP connection is closed. */
 	void onclosed(Runnable listener);

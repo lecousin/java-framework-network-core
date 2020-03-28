@@ -1,6 +1,5 @@
 package net.lecousin.framework.network.server;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -19,7 +18,7 @@ import net.lecousin.framework.network.TCPRemote;
 /**
  * A client connected to a {@link TCPServer}.
  */
-public class TCPServerClient extends AbstractAttributesContainer implements Closeable, TCPRemote {
+public class TCPServerClient extends AbstractAttributesContainer implements TCPRemote {
 
 	TCPServerClient(TCPServer.Client privateInterface) {
 		this.privateInterface = privateInterface;

@@ -5,10 +5,12 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
@@ -317,6 +319,20 @@ public class SSLClient extends TCPClient {
 			previous.onError(result::error);
 		}
 		return result;
+	}
+	
+	@Override
+	public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
+		super.newDataToSendWhenPossible(() -> {
+			LinkedList<ByteBuffer> encrypted;
+			try {
+				encrypted = ssl.encryptDataToSend(sslClient, dataProvider.get());
+			} catch (SSLException e) {
+				sp.error(e);
+				return new ArrayList<>(0);
+			}
+			return encrypted;
+		}, sp, timeout);
 	}
 	
 	

@@ -1,6 +1,5 @@
 package net.lecousin.framework.network.client;
 
-import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketAddress;
@@ -40,7 +39,7 @@ import net.lecousin.framework.util.Pair;
  * TCP client, connected to a server using TCP protocol (using sockets).
  * It uses the {@link NetworkManager} to make asynchronous operations.<br/>
  */
-public class TCPClient extends AbstractAttributesContainer implements Closeable, TCPRemote {
+public class TCPClient extends AbstractAttributesContainer implements TCPRemote {
 	
 	/** Constcutor. */
 	public TCPClient() {
