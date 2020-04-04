@@ -127,8 +127,9 @@ public class NetworkSecurity {
 			return jp;
 		}
 
-		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
-			NetworkSecurityFeature instance = plugins.get(plugin);
+		for (Map.Entry<NetworkSecurityPlugin, NetworkSecurityFeature> entry : plugins.entrySet()) {
+			NetworkSecurityPlugin plugin = entry.getKey();
+			NetworkSecurityFeature instance = entry.getValue();
 			Object cfg = instance.getConfigurationIfChanged();
 			if (cfg == null)
 				continue;
@@ -158,8 +159,7 @@ public class NetworkSecurity {
 	}
 	
 	private void clean() {
-		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
-			NetworkSecurityFeature instance = plugins.get(plugin);
+		for (NetworkSecurityFeature instance : plugins.values()) {
 			instance.clean();
 		}
 	}
