@@ -145,7 +145,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		private boolean closeAfterLastOutput = false;
 		private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 		private Async<IOException> dataToSendSP = null;
-		private LockPoint<NoException> sending = new LockPoint<>();
+		private LockPoint<NoException> sendLock = new LockPoint<>();
 		
 		public TCPServer getServer() {
 			return TCPServer.this;
@@ -217,7 +217,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {
-			sending.lock();
+			sendLock.lock();
 			try {
 				if (channel == null || !channel.isConnected()) throw new ClosedChannelException();
 				// ask the protocol to do any needed processing before sending the data
@@ -243,7 +243,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
 				return sp;
 			} finally {
-				sending.unlock();
+				sendLock.unlock();
 			}
 		}
 		
@@ -298,54 +298,65 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		@Override
+		@SuppressWarnings("java:S3776") // complexity
 		public void readyToSend() {
-			sending.lock();
+			sendLock.lock();
 			try {
-				if (outputBuffers == null || channel == null) return;
-				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
-					Supplier<List<ByteBuffer>> provider = dataToSendProvider;
-					Async<IOException> sp = dataToSendSP;
-					dataToSendProvider = null;
-					dataToSendSP = null;
-					LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
-					if (buffers.isEmpty()) {
-						unblockTask(sp);
-					} else {
-						for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
-							ByteBuffer b = it.next();
-							outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
+				do {
+					if (outputBuffers == null || channel == null) return;
+					if (outputBuffers.isEmpty() && dataToSendProvider != null) {
+						Supplier<List<ByteBuffer>> provider = dataToSendProvider;
+						Async<IOException> sp = dataToSendSP;
+						dataToSendProvider = null;
+						dataToSendSP = null;
+						LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
+						if (buffers.isEmpty()) {
+							unblockTask(sp);
+						} else {
+							for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
+								ByteBuffer b = it.next();
+								outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
+							}
 						}
 					}
-				}
-				while (outputBuffers != null && !outputBuffers.isEmpty()) {
-					try {
-						if (sendNextBuffer() == 0)
-							break; // cannot write anymore
-					} catch (IOException e) {
-						manager.getLogger().error("Error sending data to client, close it", e);
-						close();
-						return;
+					boolean canContinue = true;
+					while (outputBuffers != null && !outputBuffers.isEmpty()) {
+						try {
+							if (sendNextBuffer() == 0) {
+								// cannot write anymore
+								canContinue = false;
+								break;
+							}
+						} catch (IOException e) {
+							manager.getLogger().error("Error sending data to client, close it", e);
+							close();
+							return;
+						}
+	
 					}
-
-				}
-				if (outputBuffers == null) return;
-				if (outputBuffers.isEmpty()) {
-					// we are done with all data to be sent
-					if (closeAfterLastOutput) {
-						close();
-						return;
+					if (outputBuffers == null) return;
+					if (outputBuffers.isEmpty()) {
+						// we are done with all data to be sent
+						if (closeAfterLastOutput) {
+							close();
+							return;
+						}
+						if (dataToSendProvider == null) {
+							waitToSend = !canContinue;
+							return;
+						} else if (canContinue) {
+							continue;
+						}
 					}
-					waitToSend = false; // do not wait next time
-					if (dataToSendProvider == null)
-						return;
-				}
-				// still something to write, we need to register to the network manager
-				if (manager.getLogger().debug())
-					manager.getLogger().debug("Register to NetworkManager to send data: "
-						+ outputBuffers.size() + " buffer(s) remaining");
-				manager.register(channel, SelectionKey.OP_WRITE, Client.this, lastSendTimeout);
+					// still something to write, we need to register to the network manager
+					if (manager.getLogger().debug())
+						manager.getLogger().debug("Register to NetworkManager to send data: "
+							+ outputBuffers.size() + " buffer(s) remaining");
+					manager.register(channel, SelectionKey.OP_WRITE, Client.this, lastSendTimeout);
+					break;
+				} while (true);
 			} finally {
-				sending.unlock();
+				sendLock.unlock();
 			}
 		}
 		
@@ -381,7 +392,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
-			sending.lock();
+			sendLock.lock();
 			Async<IOException> prevSP;
 			try {
 				if (channel == null || !channel.isConnected() || outputBuffers == null) {
@@ -395,7 +406,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (!waitToSend && outputBuffers.isEmpty() && prevProvider == null)
 					manager.register(channel, SelectionKey.OP_WRITE, Client.this, timeout);
 			} finally {
-				sending.unlock();
+				sendLock.unlock();
 			}
 			if (prevSP != null)
 				prevSP.cancel(new CancelException("Send cancelled: new data to send provided"));

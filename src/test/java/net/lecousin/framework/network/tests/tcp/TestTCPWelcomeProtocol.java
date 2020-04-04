@@ -269,6 +269,8 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 				byte[] buf = client.getReceiver().readBytes(1024 * 1024, 15000).blockResult(0);
 				Assert.assertEquals("Buffer " + i, 1024 * 1024, buf.length);
 				Assert.assertEquals(i, DataUtil.Read32.LE.read(buf, i));
+				if (i < 10 || i > 995 || (i % 100) == 0)
+					System.out.println("Received: " + i);
 			} catch (IOException e) {
 				throw new Exception("Error reading buffer " + i, e);
 			}

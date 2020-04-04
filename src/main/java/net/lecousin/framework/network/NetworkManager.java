@@ -366,6 +366,11 @@ public class NetworkManager implements Closeable {
 										listeners.reset();
 										endOfInput(tcp, buffer);
 									} else {
+										while (buffer.hasRemaining()) {
+											int nb2 = ((ReadableByteChannel)key.channel()).read(buffer);
+											if (nb2 <= 0) break;
+											nb += nb2;
+										}
 										try {
 											int iops = key.interestOps();
 											key.interestOps(iops - (iops & SelectionKey.OP_READ));
@@ -526,7 +531,7 @@ public class NetworkManager implements Closeable {
 		@SuppressWarnings("squid:S3776") // complexity
 		private long checkTimeouts() {
 			long now = System.currentTimeMillis();
-			long nextTimeout = 0;
+			long nextTimeout = Long.MAX_VALUE;
 			for (SelectionKey key : selector.keys()) {
 				if (!key.isValid()) continue;
 				Attachment listeners = (Attachment)key.attachment();
@@ -537,7 +542,7 @@ public class NetworkManager implements Closeable {
 						key.cancel();
 						continue;
 					}
-					if (listeners.connectStart + listeners.onConnectTimeout > nextTimeout)
+					if (listeners.connectStart + listeners.onConnectTimeout < nextTimeout)
 						nextTimeout = listeners.connectStart + listeners.onConnectTimeout;
 				}
 				if (listeners.onRead != null && listeners.onReadTimeout > 0) {
@@ -547,7 +552,7 @@ public class NetworkManager implements Closeable {
 						resetAndClose(key);
 						continue;
 					}
-					if (listeners.readStart + listeners.onReadTimeout > nextTimeout)
+					if (listeners.readStart + listeners.onReadTimeout < nextTimeout)
 						nextTimeout = listeners.readStart + listeners.onReadTimeout;
 				}
 				if (listeners.onWrite != null && listeners.onWriteTimeout > 0) {
@@ -560,10 +565,12 @@ public class NetworkManager implements Closeable {
 						sendTimeout(sender);
 						continue;
 					}
-					if (listeners.writeStart + listeners.onWriteTimeout > nextTimeout)
+					if (listeners.writeStart + listeners.onWriteTimeout < nextTimeout)
 						nextTimeout = listeners.writeStart + listeners.onWriteTimeout;
 				}
 			}
+			if (nextTimeout == Long.MAX_VALUE)
+				nextTimeout = 0;
 			return nextTimeout;
 		}
 		
