@@ -320,7 +320,6 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 						}
 					}
 					boolean canContinue = true;
-					System.out.println("Start sending: " + outputBuffers.size());
 					while (outputBuffers != null && !outputBuffers.isEmpty()) {
 						try {
 							if (sendNextBuffer() == 0) {
@@ -335,7 +334,6 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 						}
 	
 					}
-					System.out.println("Stop sending: " + outputBuffers.size());
 					if (outputBuffers == null) return;
 					if (outputBuffers.isEmpty()) {
 						// we are done with all data to be sent

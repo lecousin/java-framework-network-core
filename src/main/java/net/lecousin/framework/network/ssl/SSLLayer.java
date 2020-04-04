@@ -427,6 +427,7 @@ public class SSLLayer {
 	public LinkedList<ByteBuffer> encryptDataToSend(TCPConnection conn, List<ByteBuffer> data) throws SSLException {
 		SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 		if (engine == null) throw new SSLException("Cannot send SSL data because connection is not even started");
+		int packetSize = engine.getSession().getPacketBufferSize();
 		Iterator<ByteBuffer> itData = data.iterator();
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		ByteBuffer dst = null;
@@ -435,9 +436,16 @@ public class SSLLayer {
 			if (logger.debug())
 				logger.debug("Encrypting " + toEncrypt.remaining() + " bytes for SSL connection " + conn);
 			do {
-				if (dst == null) dst = ByteBuffer.wrap(bufferCache.get(engine.getSession().getPacketBufferSize(), true));
+				if (dst == null) dst = ByteBuffer.wrap(bufferCache.get(Math.max(packetSize, toEncrypt.remaining()), true));
 				SSLEngineResult result = engine.wrap(toEncrypt, dst);
 				if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
+					if (dst.position() > 0) {
+						dst.flip();
+						buffers.add(dst);
+						dst = null;
+						continue;
+					}
+					packetSize <<= 1;
 					ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
 					dst.flip();
 					b.put(dst);
@@ -445,21 +453,19 @@ public class SSLLayer {
 					dst = b;
 					continue;
 				}
-				if (dst.position() > 0) {
-					dst.flip();
-					buffers.add(dst);
-					if (logger.debug())
-						logger.debug(result.bytesConsumed() + " bytes encrypted into "
-							+ dst.remaining() + " bytes for SSL connection " + conn);
-					dst = null;
-				} else if (logger.debug()) {
-					logger.debug(result.bytesConsumed() + " bytes encrypted into 0 bytes for SSL connection " + conn);
-				}
 				if (!toEncrypt.hasRemaining()) {
 					bufferCache.free(toEncrypt);
 					break;
 				}
 			} while (true);
+		}
+		if (dst != null) {
+			if (dst.position() > 0) {
+				dst.flip();
+				buffers.add(dst);
+			} else {
+				bufferCache.free(dst);
+			}
 		}
 		if (logger.debug())
 			logger.debug("Data encrypted to send on SSL connection " + conn + ": " + buffers.size() + " buffer(s)");
