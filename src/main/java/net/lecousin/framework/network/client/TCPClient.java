@@ -500,31 +500,38 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 				logger.debug("Socket ready for sending to " + channel + ", sending...");
 			boolean needsMore = false;
 			while (true) {
-				Pair<ByteBuffer, Async<IOException>> p;
+				Pair<ByteBuffer, Async<IOException>> p = null;
+				Supplier<List<ByteBuffer>> provider = null;
+				Async<IOException> providerSP = null;
 				synchronized (toSend) {
 					sending = true;
 					if (toSend.isEmpty()) {
 						if (dataToSendProvider != null) {
-							Iterator<ByteBuffer> it = dataToSendProvider.get().iterator();
-							if (!it.hasNext()) {
-								dataToSendSP.unblock();
-								dataToSendProvider = null;
-								dataToSendSP = null;
-								sending = false;
-								break;
-							}
-							do {
-								ByteBuffer data = it.next();
-								toSend.add(new Pair<>(data, it.hasNext() ? null : dataToSendSP));
-							} while (it.hasNext());
+							provider = dataToSendProvider;
+							providerSP = dataToSendSP;
 							dataToSendProvider = null;
 							dataToSendSP = null;
 						} else {
 							sending = false;
 							break;
 						}
+					} else {
+						p = toSend.getFirst();
 					}
-					p = toSend.getFirst();
+				}
+				if (provider != null) {
+					Iterator<ByteBuffer> it = provider.get().iterator();
+					if (!it.hasNext()) {
+						providerSP.unblock();
+						continue;
+					}
+					synchronized (toSend) {
+						do {
+							ByteBuffer data = it.next();
+							toSend.add(new Pair<>(data, it.hasNext() ? null : providerSP));
+						} while (it.hasNext());
+						p = toSend.getFirst();
+					}
 				}
 				if (logger.debug())
 					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
@@ -627,16 +634,17 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 	
 	@Override
 	public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
-		synchronized (this) {
+		Async<IOException> prevSP;
+		synchronized (toSend) {
 			Supplier<List<ByteBuffer>> prevProvider = dataToSendProvider;
-			Async<IOException> prevSP = dataToSendSP;
+			prevSP = dataToSendSP;
 			dataToSendProvider = dataProvider;
 			dataToSendSP = sp;
-			if (toSend.isEmpty() && prevProvider == null)
+			if (toSend.isEmpty() && prevProvider == null && !sending)
 				manager.register(channel, SelectionKey.OP_WRITE, sender, timeout);
-			if (prevProvider != null)
-				prevSP.unblock();
 		}
+		if (prevSP != null)
+			prevSP.unblock();
 	}
 	
 	@Override

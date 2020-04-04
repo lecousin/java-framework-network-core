@@ -18,7 +18,10 @@ import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.LockPoint;
 import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.concurrent.threads.Task.Priority;
+import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
@@ -142,6 +145,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		private boolean closeAfterLastOutput = false;
 		private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 		private Async<IOException> dataToSendSP = null;
+		private LockPoint<NoException> sending = new LockPoint<>();
 		
 		public TCPServer getServer() {
 			return TCPServer.this;
@@ -212,30 +216,35 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				bufferCache.free(buffer.array());
 		}
 		
-		synchronized Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {
-			if (channel == null) throw new ClosedChannelException();
-			// ask the protocol to do any needed processing before sending the data
-			LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
-			Async<IOException> sp = new Async<>();
-			boolean waitBefore = waitToSend;
-			if (!waitToSend) {
-				// we can start sending data right away
-				send(buffers, closeAfter, sp);
-				if (sp.isDone())
-					return sp;
-				waitToSend = true;
+		Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {
+			sending.lock();
+			try {
+				if (channel == null || !channel.isConnected()) throw new ClosedChannelException();
+				// ask the protocol to do any needed processing before sending the data
+				LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, buf);
+				Async<IOException> sp = new Async<>();
+				boolean waitBefore = waitToSend;
+				if (!waitToSend) {
+					// we can start sending data right away
+					send(buffers, closeAfter, sp);
+					if (sp.isDone())
+						return sp;
+					waitToSend = true;
+				}
+				while (!buffers.isEmpty()) {
+					ByteBuffer b = buffers.removeFirst();
+					outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
+				}
+				closeAfterLastOutput = closeAfter;
+				lastSendTimeout = timeout;
+				if (channel == null || !channel.isConnected())
+					return new Async<>(new ClosedChannelException());
+				if (!waitBefore && dataToSendProvider == null)
+					manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
+				return sp;
+			} finally {
+				sending.unlock();
 			}
-			while (!buffers.isEmpty()) {
-				ByteBuffer b = buffers.removeFirst();
-				outputBuffers.add(new Pair<>(b, buffers.isEmpty() ? sp : null));
-			}
-			closeAfterLastOutput = closeAfter;
-			lastSendTimeout = timeout;
-			if (channel == null || !channel.isConnected())
-				return new Async<>(new ClosedChannelException());
-			if (!waitBefore && dataToSendProvider == null)
-				manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
-			return sp;
 		}
 		
 		private void send(LinkedList<ByteBuffer> buffers, boolean closeAfter, Async<IOException> sp) {
@@ -281,9 +290,17 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			manager.getDataLogger().trace(s.toString());
 		}
 		
+		private void unblockTask(Async<?> toUnblock) {
+			Task.cpu("Send done",  Priority.NORMAL, t -> {
+				toUnblock.unblock();
+				return null;
+			}).start();
+		}
+		
 		@Override
 		public void readyToSend() {
-			synchronized (Client.this) {
+			sending.lock();
+			try {
 				if (outputBuffers == null || channel == null) return;
 				if (outputBuffers.isEmpty() && dataToSendProvider != null) {
 					Supplier<List<ByteBuffer>> provider = dataToSendProvider;
@@ -291,13 +308,14 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					dataToSendProvider = null;
 					dataToSendSP = null;
 					LinkedList<ByteBuffer> buffers = protocol.prepareDataToSend(publicInterface, provider.get());
-					if (buffers.isEmpty())
-						sp.unblock();
-					else
+					if (buffers.isEmpty()) {
+						unblockTask(sp);
+					} else {
 						for (Iterator<ByteBuffer> it = buffers.iterator(); it.hasNext(); ) {
 							ByteBuffer b = it.next();
 							outputBuffers.add(new Pair<>(b, it.hasNext() ? null : sp));
 						}
+					}
 				}
 				while (outputBuffers != null && !outputBuffers.isEmpty()) {
 					try {
@@ -325,6 +343,8 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					manager.getLogger().debug("Register to NetworkManager to send data: "
 						+ outputBuffers.size() + " buffer(s) remaining");
 				manager.register(channel, SelectionKey.OP_WRITE, Client.this, lastSendTimeout);
+			} finally {
+				sending.unlock();
 			}
 		}
 		
@@ -352,7 +372,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					bufferCache.free(toWrite.getValue1());
 					outputBuffers.removeFirst();
 					if (toWrite.getValue2() != null)
-						toWrite.getValue2().unblock();
+						unblockTask(toWrite.getValue2());
 					break;
 				}
 			} while (nb > 0);
@@ -360,18 +380,24 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
-			synchronized (this) {
-				if (channel == null)
+			sending.lock();
+			Async<IOException> prevSP;
+			try {
+				if (channel == null || !channel.isConnected() || outputBuffers == null) {
 					sp.error(new ClosedChannelException());
+					return;
+				}
 				Supplier<List<ByteBuffer>> prevProvider = dataToSendProvider;
-				Async<IOException> prevSP = dataToSendSP;
+				prevSP = dataToSendSP;
 				dataToSendProvider = dataProvider;
 				dataToSendSP = sp;
 				if (!waitToSend && outputBuffers.isEmpty() && prevProvider == null)
 					manager.register(channel, SelectionKey.OP_WRITE, Client.this, timeout);
-				if (prevProvider != null)
-					prevSP.unblock();
+			} finally {
+				sending.unlock();
 			}
+			if (prevSP != null)
+				prevSP.cancel(new CancelException("Send cancelled: new data to send provided"));
 		}
 		
 		@Override
