@@ -322,6 +322,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 						if (sendNextBuffer() == 0)
 							break; // cannot write anymore
 					} catch (IOException e) {
+						manager.getLogger().error("Error sending data to client, close it", e);
 						close();
 						return;
 					}

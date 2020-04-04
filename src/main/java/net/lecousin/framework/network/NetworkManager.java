@@ -436,7 +436,7 @@ public class NetworkManager implements Closeable {
 						if (ms <= 0) ms = 1;
 						selector.select(ms);
 					} else {
-						selector.select();
+						selector.select(60000);
 					}
 				} catch (IOException e) {
 					if (logger.error()) logger.error("Error selecting channels", e);
