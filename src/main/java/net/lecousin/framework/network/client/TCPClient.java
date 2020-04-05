@@ -28,10 +28,10 @@ import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.mutable.MutableInteger;
-import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.TCPRemote;
+import net.lecousin.framework.util.AbstractAttributesContainer;
 import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
 
@@ -80,8 +80,10 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 		closed = true;
 		if (spConnect != null) spConnect.error(new ClosedChannelException());
 		synchronized (toSend) {
-			while (!toSend.isEmpty())
-				toSend.removeFirst().getValue2().error(new ClosedChannelException());
+			while (!toSend.isEmpty()) {
+				Pair<ByteBuffer, Async<IOException>> p = toSend.removeFirst();
+				if (p.getValue2() != null) p.getValue2().error(new ClosedChannelException());
+			}
 		}
 		networkClient.channelClosed();
 		onclosed.fire();

@@ -4,7 +4,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import net.lecousin.framework.application.Version;
-import net.lecousin.framework.network.AbstractAttributesContainer;
+import net.lecousin.framework.util.AbstractAttributesContainer;
 
 public class HostProtocol extends AbstractAttributesContainer {
 

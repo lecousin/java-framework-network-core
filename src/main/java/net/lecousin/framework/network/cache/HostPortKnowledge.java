@@ -5,7 +5,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import net.lecousin.framework.concurrent.async.ReadWriteLockPoint;
-import net.lecousin.framework.network.AbstractAttributesContainer;
+import net.lecousin.framework.util.AbstractAttributesContainer;
 
 public class HostPortKnowledge extends AbstractAttributesContainer {
 

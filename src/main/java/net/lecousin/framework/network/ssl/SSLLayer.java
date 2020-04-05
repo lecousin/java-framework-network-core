@@ -25,7 +25,7 @@ import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.memory.ByteArrayCache;
-import net.lecousin.framework.network.AttributesContainer;
+import net.lecousin.framework.util.AttributesContainer;
 
 /**
  * SSL implementation.

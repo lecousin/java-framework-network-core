@@ -12,8 +12,8 @@ import java.util.function.Supplier;
 
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.IAsync;
-import net.lecousin.framework.network.AbstractAttributesContainer;
 import net.lecousin.framework.network.TCPRemote;
+import net.lecousin.framework.util.AbstractAttributesContainer;
 
 /**
  * A client connected to a {@link TCPServer}.
