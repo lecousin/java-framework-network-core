@@ -146,8 +146,9 @@ public class SSLServerProtocol implements ServerProtocol {
 	}
 	
 	@Override
-	public int getInputBufferSize() {
-		return 16384; // ask ssl engine??
+	public int getInputBufferSize(TCPServerClient client) {
+		Client c = (Client)client.getAttribute(ATTRIBUTE_SSL_CLIENT);
+		return c == null ? 16384 : ssl.getEncryptedBufferSize(c);
 	}
 	
 	@Override

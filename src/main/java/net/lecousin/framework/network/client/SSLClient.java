@@ -20,6 +20,7 @@ import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.async.LockPoint;
 import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -295,41 +296,34 @@ public class SSLClient extends TCPClient {
 		task.getOutput().onDone(decrypted);
 	}
 	
-	private Async<IOException> lastSend = null;
+	private LockPoint<NoException> encryptLock = new LockPoint<>();
 	
 	@Override
-	public Async<IOException> send(List<ByteBuffer> data, int timeout) {
-		Async<IOException> result = new Async<>();
-		Task<Void, NoException> task = Task.cpu("Encrypting SSL data", Task.Priority.NORMAL, t -> {
-			LinkedList<ByteBuffer> encrypted;
-			try {
-				encrypted = ssl.encryptDataToSend(sslClient, data);
-			} catch (SSLException e) {
-				result.error(e);
-				return null;
-			}
-			SSLClient.super.send(encrypted, timeout).onDone(result);
-			return null;
-		});
-		Async<IOException> previous = lastSend;
-		lastSend = result;
-		if (previous == null) task.start();
-		else {
-			task.startOn(previous, false);
-			previous.onError(result::error);
+	public IAsync<IOException> send(List<ByteBuffer> data, int timeout) {
+		LinkedList<ByteBuffer> encrypted;
+		encryptLock.lock();
+		try {
+			encrypted = ssl.encryptDataToSend(sslClient, data);
+		} catch (SSLException e) {
+			return new Async<>(e);
+		} finally {
+			encryptLock.unlock();
 		}
-		return result;
+		return SSLClient.super.send(encrypted, timeout);
 	}
 	
 	@Override
 	public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
 		super.newDataToSendWhenPossible(() -> {
 			LinkedList<ByteBuffer> encrypted;
+			encryptLock.lock();
 			try {
 				encrypted = ssl.encryptDataToSend(sslClient, dataProvider.get());
 			} catch (SSLException e) {
 				sp.error(e);
 				return new ArrayList<>(0);
+			} finally {
+				encryptLock.unlock();
 			}
 			return encrypted;
 		}, sp, timeout);

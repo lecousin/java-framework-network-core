@@ -61,7 +61,7 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 		}
 
 		@Override
-		public int getInputBufferSize() {
+		public int getInputBufferSize(TCPServerClient client) {
 			return 1024;
 		}
 

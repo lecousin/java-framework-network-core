@@ -51,13 +51,13 @@ public class TestTunnelProtocol extends AbstractNetworkTest {
 			}
 			tunnelProtocol.registerClient(client, tunnel);
 			int recvTimeout = tunnelProtocol.startProtocol(client);
-			tunnelProtocol.getInputBufferSize();
+			tunnelProtocol.getInputBufferSize(client);
 			client.send(ByteBuffer.wrap(new byte[] { 1 }), 5000);
 			return recvTimeout;
 		}
 
 		@Override
-		public int getInputBufferSize() {
+		public int getInputBufferSize(TCPServerClient client) {
 			return 4096;
 		}
 

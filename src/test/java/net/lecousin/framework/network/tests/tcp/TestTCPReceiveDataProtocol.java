@@ -54,7 +54,7 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 		}
 
 		@Override
-		public int getInputBufferSize() {
+		public int getInputBufferSize(TCPServerClient client) {
 			return 1024;
 		}
 
@@ -75,7 +75,7 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 					return;
 				}
 				if (++index == BLOCK_SIZE) {
-					System.out.println("Block " + block + " received from client.");
+					//System.out.println("Block " + block + " received from client.");
 					index = 0;
 					block++;
 				}

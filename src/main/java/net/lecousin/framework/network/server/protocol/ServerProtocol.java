@@ -23,7 +23,7 @@ public interface ServerProtocol {
 	 * Returns the size of the buffer which will be allocated to receive data from the client.
 	 * @return the size of the buffer which will be allocated to receive data from the client
 	 */
-	int getInputBufferSize();
+	int getInputBufferSize(TCPServerClient client);
 	
 	/**
 	 * Called when data has been received from the client.
