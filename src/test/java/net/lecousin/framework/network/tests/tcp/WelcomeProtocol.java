@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.IAsync;
@@ -58,12 +59,12 @@ public class WelcomeProtocol implements ServerProtocol {
 			byte b = data.get();
 			if (b == '\n') {
 				String s = msg.toString();
-				if (!s.startsWith("I'm ")) {
-					if (!s.equals("flood me")) {
-						client.send(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII)), 5000);
-						client.close();
-						break;
-					}
+				client.removeAttribute("reading");
+				if (s.startsWith("I'm ")) {
+					client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)), 5000);
+					continue;
+				}
+				if (s.equals("flood me")) {
 					@SuppressWarnings("unchecked")
 					IAsync<IOException>[] sent = new IAsync[1000];
 					for (int i = 0; i < 1000; ++i) {
@@ -81,9 +82,20 @@ public class WelcomeProtocol implements ServerProtocol {
 					timeout = 1200000;
 					break;
 				}
-				client.send(ByteBuffer.wrap(("Hello " + s.substring(4) + '\n').getBytes(StandardCharsets.US_ASCII)), 5000);
-				client.removeAttribute("reading");
-				continue;
+				if (s.equals("Bye")) {
+					try {
+						client.send(Arrays.asList(ByteBuffer.wrap("Bye".getBytes(StandardCharsets.US_ASCII))), 5000, true);
+					} catch (ClosedChannelException e) {
+						// ignore
+					}
+					return;
+				}
+				try {
+					client.send(Arrays.asList(ByteBuffer.wrap("I don't understand you\n".getBytes(StandardCharsets.US_ASCII))), 5000, true);
+				} catch (ClosedChannelException e) {
+					// ignore
+				}
+				return;
 			}
 			msg.append((char)b);
 		}

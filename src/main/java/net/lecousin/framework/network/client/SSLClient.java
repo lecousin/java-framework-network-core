@@ -1,5 +1,6 @@
 package net.lecousin.framework.network.client;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -16,7 +17,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.collections.TurnArray;
-import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
@@ -191,7 +191,7 @@ public class SSLClient extends TCPClient {
 		if (list != null) {
 			logger.debug("Cancel SSL Client pending read operations as client has been closed");
 			for (Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> t : list)
-				t.getValue1().cancel(new CancelException("Client was closed"));
+				t.getValue1().error(new EOFException("Client was closed"));
 		}
 	}
 	

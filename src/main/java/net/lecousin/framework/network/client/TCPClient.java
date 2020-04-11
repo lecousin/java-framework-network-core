@@ -129,8 +129,8 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 		public void receiveError(IOException error, ByteBuffer buffer) {
 			logger.debug("Client receive error", error);
 			reading.unblockError(error);
-			if (buffer != null && buffer.hasArray())
-				bufferCache.free(buffer.array());
+			if (buffer != null)
+				bufferCache.free(buffer);
 		}
 		
 		@Override
@@ -289,7 +289,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 						unexpectedEnd(res, pos.get(), nbBytes + " byte(s)");
 						return;
 					}
-					Task.cpu("Handle received data from TCPClient", Task.Priority.RATHER_IMPORTANT, t -> {
+					Task.cpu("Skipping received data from TCPClient", Task.Priority.RATHER_IMPORTANT, t -> {
 						int len = Math.min(result.remaining(), nbBytes - pos.get());
 						result.position(result.position() + len);
 						if (result.hasRemaining())

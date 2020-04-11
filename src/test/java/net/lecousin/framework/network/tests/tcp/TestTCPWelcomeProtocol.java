@@ -1,6 +1,7 @@
 package net.lecousin.framework.network.tests.tcp;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
@@ -103,31 +104,52 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 	
 	@Test
 	public void testClientReceiverReadBytes() throws Exception {
-		TCPClient client = connectClient();
-		Assert.assertArrayEquals("Welcome\n".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(8, 10000).blockResult(0));
-		Async<IOException> sp = new Async<>();
-		client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("test".getBytes())), sp, 5000);
-		client.close();
+		try (TCPClient client = connectClient()) {
+			Async<IOException> sp = new Async<>();
+			client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("I'm test\n".getBytes())), sp, 5000);
+			Assert.assertArrayEquals("Welco".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(5, 10000).blockResult(0));
+			Assert.assertArrayEquals("me\nHello ".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(9, 10000).blockResult(0));
+			Assert.assertArrayEquals("test\n".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(5, 10000).blockResult(0));
+		}
 		try { Thread.sleep(1000); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
+		try (TCPClient client = connectClient()) {
+			sendLine(client, "Bye");
+			Assert.assertArrayEquals("Welco".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(5, 10000).blockResult(0));
+			Assert.assertArrayEquals("me\nBy".getBytes(StandardCharsets.US_ASCII), client.getReceiver().readBytes(5, 10000).blockResult(0));
+			try {
+				client.getReceiver().readBytes(2, 5000).blockThrow(0);
+				throw new AssertionError();
+			} catch (EOFException e) {
+				// ok
+			}
+		}
 	}
 	
 	@Test
 	public void testClientReceiverSkipBytes() throws Exception {
-		TCPClient client = connectClient();
-		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
-		Assert.assertArrayEquals(new byte[] { 'e' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
-		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
-		Assert.assertArrayEquals(new byte[] { 'c' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
-		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
-		Assert.assertArrayEquals(new byte[] { 'm' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
-		client.getReceiver().skipBytes(1, 10000).blockThrow(0);
-		Assert.assertArrayEquals(new byte[] { '\n' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
-		Async<IOException> sp = new Async<>();
-		client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("test".getBytes())), sp, 5000);
-		client.close();
-		try { Thread.sleep(1000); } catch (InterruptedException e) {}
-		Assert.assertEquals(0, server.getConnectedClients().size());
+		try (TCPClient client = connectClient()) {
+			client.getReceiver().skipBytes(1, 10000).blockThrow(0);
+			Assert.assertArrayEquals(new byte[] { 'e' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			client.getReceiver().skipBytes(2, 10000).blockThrow(0);
+			Assert.assertArrayEquals(new byte[] { 'o' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			sendLine(client, "I'm test");
+			client.getReceiver().skipBytes(5, 10000).blockThrow(0);
+			Assert.assertArrayEquals(new byte[] { 'l' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			client.getReceiver().skipBytes(7, 10000).blockThrow(0);
+			Assert.assertArrayEquals(new byte[] { '\n' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			Async<IOException> skip = client.getReceiver().skipBytes(1, 10000);
+			Async<IOException> sp = new Async<>();
+			client.newDataToSendWhenPossible(() -> Collections.singletonList(ByteBuffer.wrap("Bye\n".getBytes())), sp, 5000);
+			skip.blockThrow(0);
+			Assert.assertArrayEquals(new byte[] { 'y' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			try {
+				client.getReceiver().skipBytes(5, 10000).blockThrow(0);
+				throw new AssertionError();
+			} catch (EOFException e) {
+				// ok
+			}
+		}
 	}
 	
 	@Test
@@ -251,10 +273,34 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 			sendLine(client, "I'm Message 3");
 			consumed = client.getReceiver().consume(new TextConsumer("Hello Message 3\n"), 8192, 10000);
 			consumed.blockThrow(0);
+			
+			sendLine(client, "I'm A");
+			consumed = client.getReceiver().consume(new TextConsumer("Hel"), 8192, 10000);
+			consumed.blockThrow(0);
+			consumed = client.getReceiver().consume(new TextConsumer("lo A\nHello B\nHello C\n"), 8192, 10000);
+			Assert.assertFalse(consumed.isDone());
+			sendLine(client, "I'm B").blockThrow(0);
+			Assert.assertFalse(consumed.isDone());
+			sendLine(client, "I'm C");
+			consumed.blockThrow(0);
+
+			sendLine(client, "I'm D");
+			consumed = client.getReceiver().consume(new TextConsumer("Hello "), 8192, 10000);
+			consumed.blockThrow(0);
+			consumed = client.getReceiver().consume(new TextConsumer("D"), 8192, 10000);
+			consumed.blockThrow(0);
+			consumed = client.getReceiver().consume(new TextConsumer("\n"), 8192, 10000);
+			consumed.blockThrow(0);
+			
 			sendLine(client, "I'm Message 4");
-			consumed = client.getReceiver().consume(new TextConsumer("Hello Message x\n"), 8192, 10000);
-			consumed.block(0);
-			Assert.assertTrue(consumed.hasError());
+			consumed = client.getReceiver().consume(new TextConsumer("Hello Message 4\nBye XXX"), 8192, 10000);
+			sendLine(client, "Bye");
+			try {
+				consumed.blockThrow(0);
+				throw new AssertionError();
+			} catch (EOFException e) {
+				// ok
+			}
 		}
 	}
 	
@@ -324,16 +370,50 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 	
 	@Test
 	public void testClientReceiverReadUntilWithRemainingBytes() throws Exception {
-		TCPClient client = connectClient();
-		Assert.assertArrayEquals(new byte[] { 'W' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
-		ByteArrayIO io = client.getReceiver().readUntil((byte)'\n', 256, 10000).blockResult(0);
-		byte[] remaining = new byte[] { 'e', 'l', 'c', 'o', 'm', 'e' };
-		int pos = 0;
-		while (pos < remaining.length) {
-			Assert.assertEquals(remaining[pos++], io.read());
+		try (TCPClient client = connectClient()) {
+			Assert.assertArrayEquals(new byte[] { 'W' }, client.getReceiver().readBytes(1, 10000).blockResult(0));
+			ByteArrayIO io = client.getReceiver().readUntil((byte)'m', 256, 10000).blockResult(0);
+			byte[] remaining = new byte[] { 'e', 'l', 'c', 'o' };
+			int pos = 0;
+			while (pos < remaining.length)
+				Assert.assertEquals(remaining[pos++], io.read());
+			Assert.assertEquals(-1, io.read());
+			
+			io = client.getReceiver().readUntil((byte)'\n', 256, 10000).blockResult(0);
+			remaining = new byte[] { 'e' };
+			pos = 0;
+			while (pos < remaining.length)
+				Assert.assertEquals(remaining[pos++], io.read());
+			Assert.assertEquals(-1, io.read());
+			
+			sendLine(client, "I'm test");
+
+			io = client.getReceiver().readUntil((byte)'t', 256, 10000).blockResult(0);
+			remaining = new byte[] { 'H', 'e', 'l', 'l', 'o', ' ' };
+			pos = 0;
+			while (pos < remaining.length)
+				Assert.assertEquals(remaining[pos++], io.read());
+			Assert.assertEquals(-1, io.read());
+
+			AsyncSupplier<ByteArrayIO, IOException> sp = client.getReceiver().readUntil((byte)'x', 256, 10000);
+			Assert.assertFalse(sp.isDone());
+			sendLine(client, "I'm x");
+			io = sp.blockResult(0);
+			remaining = new byte[] { 'e', 's', 't', '\n', 'H', 'e', 'l', 'l', 'o', ' ' };
+			pos = 0;
+			while (pos < remaining.length)
+				Assert.assertEquals(remaining[pos++], io.read());
+			Assert.assertEquals(-1, io.read());
+			
+			sendLine(client, "Bye");
+
+			try {
+				client.getReceiver().readUntil((byte)'z', 256, 10000).blockResult(0);
+				throw new AssertionError();
+			} catch (EOFException e) {
+				// ok
+			}
 		}
-		Assert.assertEquals(-1, io.read());
-		client.close();
 	}
 	
 	@Test

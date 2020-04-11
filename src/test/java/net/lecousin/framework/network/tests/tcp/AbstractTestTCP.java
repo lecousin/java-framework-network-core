@@ -14,6 +14,7 @@ import javax.net.SocketFactory;
 
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -146,19 +147,18 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 		}
 	}
 	
-	public static void sendLine(TCPClient client, String message) throws Exception {
-		sendLine(client, message.getBytes(StandardCharsets.US_ASCII), 0);
+	public static IAsync<IOException> sendLine(TCPClient client, String message) throws Exception {
+		return sendLine(client, message.getBytes(StandardCharsets.US_ASCII), 0);
 	}
 	
-	private static void sendLine(TCPClient client, byte[] message, int pos) throws Exception {
+	private static IAsync<IOException> sendLine(TCPClient client, byte[] message, int pos) throws Exception {
 		int rem = message.length - pos;
 		if (rem < 3) {
 			client.send(ByteBuffer.wrap(message, pos, rem).asReadOnlyBuffer(), 10000);
-			client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }), 5000);
-		} else {
-			client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1).asReadOnlyBuffer(), 5000);
-			sendLine(client, message, pos + rem / 2 + 1);
+			return client.send(ByteBuffer.wrap(new byte[] { (byte)'\n' }), 5000);
 		}
+		client.send(ByteBuffer.wrap(message, pos, rem / 2 + 1).asReadOnlyBuffer(), 5000);
+		return sendLine(client, message, pos + rem / 2 + 1);
 	}
 
 }
