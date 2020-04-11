@@ -15,6 +15,7 @@ import java.util.Collections;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.util.AsyncConsumer;
 import net.lecousin.framework.concurrent.util.PartialAsyncConsumer;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.io.util.DataUtil;
@@ -301,6 +302,17 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 			} catch (EOFException e) {
 				// ok
 			}
+		}
+	}
+	
+	@Test
+	public void testClientAsConsumer() throws Exception {
+		try (TCPClient client = connectClient()) {
+			AsyncConsumer<ByteBuffer, IOException> consumer = client.asConsumer(3, 5000);
+			consumer.consume(ByteBuffer.wrap(new byte[] { 'B', 'y', 'e', '\n' }));
+			consumer.end().blockThrow(0);
+			consumer.error(new IOException("test"));
+			Assert.assertArrayEquals(new byte[] { 'W', 'e', 'l', 'c', 'o', 'm', 'e', '\n', 'B', 'y', 'e' }, client.getReceiver().readBytes(11, 5000).blockResult(0));
 		}
 	}
 	

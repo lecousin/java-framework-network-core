@@ -249,10 +249,6 @@ public class SSLLayer {
 		private void needTask() {
 			@SuppressWarnings("unchecked")
 			List<Task<Void,NoException>> tasks = (List<Task<Void,NoException>>)conn.getAttribute(HANDSHAKE_TASKS_ATTRIBUTE);
-			if (tasks == null || tasks.isEmpty()) {
-				followup(conn, timeout);
-				return;
-			}
 			MutableBoolean firstTask = new MutableBoolean(true);
 			Runnable taskDone = () -> {
 				synchronized (firstTask) {
@@ -265,15 +261,8 @@ public class SSLLayer {
 					return null;
 				}).start();
 			};
-			for (Iterator<Task<Void,NoException>> it = tasks.iterator(); it.hasNext(); ) {
-				Task<Void,NoException> t = it.next();
-				if (t.getOutput().isDone()) {
-					it.remove();
-					followup(conn, timeout);
-					return;
-				}
-				t.getOutput().onDone(taskDone);
-			}
+			for (Iterator<Task<Void,NoException>> it = tasks.iterator(); it.hasNext(); )
+				it.next().getOutput().onDone(taskDone);
 		}
 		
 		private void needWrap() {
@@ -334,14 +323,7 @@ public class SSLLayer {
 						return true;
 					}
 					if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-						if (logger.debug())
-							logger.debug(
-								"Cannot unwrap because buffer is too small, enlarge it");
-						ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
-						dst.flip();
-						b.put(dst);
-						bufferCache.free(dst);
-						dst = b;
+						dst = enlargeBuffer(dst);
 						continue;
 					}
 					if (logger.debug())
@@ -450,13 +432,7 @@ public class SSLLayer {
 				return;
 			}
 			if (SSLEngineResult.Status.BUFFER_OVERFLOW.equals(result.getStatus())) {
-				if (logger.debug())
-					logger.debug("Output buffer too small to decrypt data, try again with larger one");
-				ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
-				dst.flip();
-				b.put(dst);
-				bufferCache.free(dst);
-				dst = b;
+				dst = enlargeBuffer(dst);
 				continue;
 			}
 			// data ready
@@ -478,6 +454,14 @@ public class SSLLayer {
 			return;
 		}
 		inputBuffer.compact();
+	}
+	
+	private ByteBuffer enlargeBuffer(ByteBuffer buf) {
+		ByteBuffer b = ByteBuffer.wrap(bufferCache.get(buf.capacity() << 1, true));
+		buf.flip();
+		b.put(buf);
+		bufferCache.free(buf);
+		return b;
 	}
 	
 	/** Encrypt the given data. */
@@ -512,11 +496,7 @@ public class SSLLayer {
 						continue;
 					}
 					packetSize <<= 1;
-					ByteBuffer b = ByteBuffer.wrap(bufferCache.get(dst.capacity() << 1, true));
-					dst.flip();
-					b.put(dst);
-					bufferCache.free(dst);
-					dst = b;
+					dst = enlargeBuffer(dst);
 					continue;
 				}
 				if (!toEncrypt.hasRemaining()) {

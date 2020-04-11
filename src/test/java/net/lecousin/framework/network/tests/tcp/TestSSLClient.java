@@ -1,5 +1,6 @@
 package net.lecousin.framework.network.tests.tcp;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -7,12 +8,14 @@ import java.nio.ByteBuffer;
 
 import javax.net.ssl.SSLException;
 
+import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 public class TestSSLClient extends AbstractNetworkTest {
@@ -81,6 +84,24 @@ public class TestSSLClient extends AbstractNetworkTest {
 		try (SSLClient client = new SSLClient()) {
 			client.setHostNames("google.com");
 			client.connect(new InetSocketAddress(InetAddress.getByName("google.com"), 443), 10000).blockThrow(0);
+		}
+	}
+	
+	@Test
+	public void testTunnelConnected() throws Exception {
+		try (TCPServer server = new TCPServer()) {
+			server.setProtocol(new SSLServerProtocol(sslTest, new WelcomeProtocol()));
+			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
+		
+			try (SSLClient client = new SSLClient(sslTest)) {
+				TCPClient tunnel = new TCPClient();
+				tunnel.connect(serverAddress, 0).blockThrow(0);
+				Async<IOException> connection = new Async<>();
+				client.tunnelConnected(tunnel, connection, 10000);
+				connection.blockThrow(0);
+				client.send(ByteBuffer.wrap(new byte[] { 'B', 'y', 'e', '\n' }), 5000);
+				Assert.assertArrayEquals(new byte[] { 'W', 'e', 'l', 'c', 'o', 'm', 'e', '\n', 'B', 'y', 'e' }, client.getReceiver().readBytes(11, 5000).blockResult(0));
+			}
 		}
 	}
 	
