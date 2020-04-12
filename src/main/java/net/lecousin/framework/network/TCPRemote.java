@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.concurrent.util.AsyncConsumer;
 import net.lecousin.framework.concurrent.util.BufferedAsyncConsumer;
 
@@ -54,7 +55,12 @@ public interface TCPRemote extends Closeable {
 		AsyncConsumer<ByteBuffer, IOException> consumer = new AsyncConsumer<ByteBuffer, IOException>() {
 			@Override
 			public IAsync<IOException> consume(ByteBuffer data) {
-				return send(data, sendTimeout);
+				Async<IOException> consumption = new Async<>();
+				Task.cpu("Sending data", t -> {
+					send(data, sendTimeout).onDone(consumption);
+					return null;
+				}).start();
+				return consumption;
 			}
 			
 			@Override
