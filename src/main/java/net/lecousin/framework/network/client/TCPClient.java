@@ -57,6 +57,9 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 	private SimpleEvent onclosed = new SimpleEvent();
 	private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 	private Async<IOException> dataToSendSP = null;
+	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
+	private boolean sending = false;
+	private int lastSendTimeout = 0;
 	private ByteArrayCache bufferCache = ByteArrayCache.getInstance();
 
 	@Override
@@ -84,6 +87,11 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 				Pair<ByteBuffer, Async<IOException>> p = toSend.removeFirst();
 				if (p.getValue2() != null) p.getValue2().error(new ClosedChannelException());
 			}
+		}
+		if (dataToSendSP != null) {
+			dataToSendSP.error(new ClosedChannelException());
+			dataToSendSP = null;
+			dataToSendProvider = null;
 		}
 		networkClient.channelClosed();
 		onclosed.fire();
@@ -482,9 +490,6 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 		return br;
 	}
 	
-	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
-	private boolean sending = false;
-	private int lastSendTimeout = 0;
 	private NetworkManager.Sender sender = new NetworkManager.Sender() {
 		@Override
 		public void channelClosed() {

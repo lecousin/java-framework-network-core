@@ -170,12 +170,24 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			for (AutoCloseable c : publicInterface.toClose)
 				try { c.close(); }
 				catch (Exception e) { /* ignore */ }
+			sendLock.lock();
 			while (!publicInterface.pending.isEmpty()) {
 				IAsync<?> sp = publicInterface.pending.pollFirst();
 				if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
 			}
+			for (Pair<ByteBuffer,Async<IOException>> p : outputBuffers) {
+				if (p.getValue2() != null)
+					p.getValue2().error(new ClosedChannelException());
+				bufferCache.free(p.getValue1());
+			}
+			if (dataToSendSP != null) {
+				dataToSendSP.error(new ClosedChannelException());
+				dataToSendSP = null;
+				dataToSendProvider = null;
+			}
 			publicInterface = null;
 			outputBuffers = null;
+			sendLock.unlock();
 		}
 		
 		public boolean isClosed() {

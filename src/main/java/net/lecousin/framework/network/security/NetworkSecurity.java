@@ -43,7 +43,7 @@ public class NetworkSecurity {
 	private Logger logger;
 	private JoinPoint<NoException> loaded = new JoinPoint<>();
 	private Map<NetworkSecurityPlugin, NetworkSecurityFeature> plugins = new HashMap<>();
-	private Map<Class<?>, NetworkSecurityFeature> instances = new HashMap<>();
+	private Map<String, NetworkSecurityFeature> instances = new HashMap<>();
 	
 	private NetworkSecurity() {
 	}
@@ -87,7 +87,7 @@ public class NetworkSecurity {
 				loading.addToJoin(1);
 				res.onDone(cfg -> {
 					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
-					instances.put(instance.getClass(), instance);
+					instances.put(instance.getClass().getName(), instance);
 					plugins.put(plugin, instance);
 					instance.clean();
 					logger.info("Configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()
@@ -96,14 +96,14 @@ public class NetworkSecurity {
 				}, err -> {
 					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
 					NetworkSecurityFeature instance = plugin.newInstance(app, null);
-					instances.put(instance.getClass(), instance);
+					instances.put(instance.getClass().getName(), instance);
 					plugins.put(plugin, instance);
 					loading.joined();
 				}, cancel -> loading.joined());
 				input.closeAfter(res);
 			} else {
 				NetworkSecurityFeature instance = plugin.newInstance(app, null);
-				instances.put(instance.getClass(), instance);
+				instances.put(instance.getClass().getName(), instance);
 				plugins.put(plugin, instance);
 			}
 		}		
@@ -116,7 +116,7 @@ public class NetworkSecurity {
 	/** Return the requested feature. */
 	@SuppressWarnings("unchecked")
 	public <T extends NetworkSecurityFeature> T getFeature(Class<T> clazz) {
-		return (T)instances.get(clazz);
+		return (T)instances.get(clazz.getName());
 	}
 	
 	/** Save the configuration to the application configuration directory. */
