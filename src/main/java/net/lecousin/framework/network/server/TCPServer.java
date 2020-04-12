@@ -153,6 +153,10 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		
 		@Override
 		public void close() {
+			close(true);
+		}
+		
+		private void close(boolean needSendLock) {
 			synchronized (clients) {
 				clients.remove(this);
 			}
@@ -170,24 +174,29 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			for (AutoCloseable c : publicInterface.toClose)
 				try { c.close(); }
 				catch (Exception e) { /* ignore */ }
-			sendLock.lock();
-			while (!publicInterface.pending.isEmpty()) {
-				IAsync<?> sp = publicInterface.pending.pollFirst();
-				if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
+			if (needSendLock)
+				sendLock.lock();
+			try {
+				while (!publicInterface.pending.isEmpty()) {
+					IAsync<?> sp = publicInterface.pending.pollFirst();
+					if (!sp.isDone()) sp.cancel(new CancelException("Client connection closed"));
+				}
+				for (Pair<ByteBuffer,Async<IOException>> p : outputBuffers) {
+					if (p.getValue2() != null)
+						p.getValue2().error(new ClosedChannelException());
+					bufferCache.free(p.getValue1());
+				}
+				if (dataToSendSP != null) {
+					dataToSendSP.error(new ClosedChannelException());
+					dataToSendSP = null;
+					dataToSendProvider = null;
+				}
+				publicInterface = null;
+				outputBuffers = null;
+			} finally {
+				if (needSendLock)
+					sendLock.unlock();
 			}
-			for (Pair<ByteBuffer,Async<IOException>> p : outputBuffers) {
-				if (p.getValue2() != null)
-					p.getValue2().error(new ClosedChannelException());
-				bufferCache.free(p.getValue1());
-			}
-			if (dataToSendSP != null) {
-				dataToSendSP.error(new ClosedChannelException());
-				dataToSendSP = null;
-				dataToSendProvider = null;
-			}
-			publicInterface = null;
-			outputBuffers = null;
-			sendLock.unlock();
 		}
 		
 		public boolean isClosed() {
@@ -274,7 +283,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				try { nb = channel.write(buffer); }
 				catch (IOException e) {
 					// error while writing
-					close();
+					close(false);
 					sp.error(e);
 					return;
 				}
@@ -285,7 +294,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					buffer = null;
 					if (buffers.isEmpty()) {
 						// no more buffer
-						if (closeAfter) close();
+						if (closeAfter) close(false);
 						sp.unblock();
 						return;
 					}
@@ -342,7 +351,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 							}
 						} catch (IOException e) {
 							manager.getLogger().error("Error sending data to client, close it", e);
-							close();
+							close(false);
 							return;
 						}
 	
@@ -351,7 +360,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					if (outputBuffers.isEmpty()) {
 						// we are done with all data to be sent
 						if (closeAfterLastOutput) {
-							close();
+							close(false);
 							return;
 						}
 						if (dataToSendProvider == null) {
