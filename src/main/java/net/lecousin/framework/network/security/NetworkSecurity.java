@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.lecousin.framework.application.Application;
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.Executable;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
@@ -80,33 +81,32 @@ public class NetworkSecurity {
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
 			File cfgFile = new File(appCfgDir, plugin.getClass().getName() + ".xml");
 			if (cfgFile.exists()) {
-				FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.Priority.IMPORTANT);
-				AsyncSupplier<Object, SerializationException> res =
-					new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
-						new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+				AsyncSupplier<Object, SerializationException> res = loadPluginConfiguration(plugin, cfgFile);
 				loading.addToJoin(1);
 				res.onDone(cfg -> {
-					NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
-					instances.put(instance.getClass().getName(), instance);
-					plugins.put(plugin, instance);
-					instance.clean();
+					NetworkSecurityFeature instance = addPluginInstance(plugin, app, cfg);
 					logger.info("Configuration loaded for application " + app.getGroupId() + "-" + app.getArtifactId()
 						+ ", plugin " + instance.getClass().getName());
 					loading.joined();
 				}, err -> {
-					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath(), err);
-					NetworkSecurityFeature instance = plugin.newInstance(app, null);
-					instances.put(instance.getClass().getName(), instance);
-					plugins.put(plugin, instance);
+					NetworkSecurityFeature instance = addPluginInstance(plugin, app, null);
+					logger.error("Error reading configuration file " + cfgFile.getAbsolutePath()
+						+ " for plugin " + instance.getClass().getName(), err);
 					loading.joined();
 				}, cancel -> loading.joined());
-				input.closeAfter(res);
 			} else {
-				NetworkSecurityFeature instance = plugin.newInstance(app, null);
-				instances.put(instance.getClass().getName(), instance);
-				plugins.put(plugin, instance);
+				addPluginInstance(plugin, app, null);
 			}
 		}		
+	}
+	
+	private NetworkSecurityFeature addPluginInstance(NetworkSecurityPlugin plugin, Application app, Object cfg) {
+		NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
+		instances.put(instance.getClass().getName(), instance);
+		plugins.put(plugin, instance);
+		if (cfg != null)
+			instance.clean();
+		return instance;
 	}
 	
 	public IAsync<NoException> isLoaded() {
@@ -117,6 +117,21 @@ public class NetworkSecurity {
 	@SuppressWarnings("unchecked")
 	public <T extends NetworkSecurityFeature> T getFeature(Class<T> clazz) {
 		return (T)instances.get(clazz.getName());
+	}
+	
+	public static AsyncSupplier<Object, SerializationException> loadPluginConfiguration(NetworkSecurityPlugin plugin, File cfgFile) {
+		FileIO.ReadOnly input = new FileIO.ReadOnly(cfgFile, Task.Priority.IMPORTANT);
+		AsyncSupplier<Object, SerializationException> res =
+			new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
+				new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+		res.onDone(() -> {
+			try {
+				input.close();
+			} catch (Exception e) {
+				LCCore.getApplication().getDefaultLogger().error("Unable to close " + cfgFile.getAbsolutePath(), e);
+			}
+		});
+		return res;
 	}
 	
 	/** Save the configuration to the application configuration directory. */
@@ -147,11 +162,12 @@ public class NetworkSecurity {
 				new XMLSerializer(null, plugin.getClass().getSimpleName(), null, StandardCharsets.UTF_8, 4096, true)
 					.serialize(cfg, new TypeDefinition(plugin.getConfigurationClass()), output, new ArrayList<>(0));
 			jp.addToJoin(1);
-			ser.onDone(jp::joined, err -> {
+			ser.onDone(() -> {
+				output.closeAsync().onDone(jp::joined);
+			}, err -> {
 				logger.error("Error saving configuration file " + cfgFile.getAbsolutePath(), err);
-				jp.joined();
+				output.closeAsync().onDone(jp::joined);
 			}, cancel -> jp.joined());
-			output.closeAfter(ser);
 		}
 
 		jp.start();

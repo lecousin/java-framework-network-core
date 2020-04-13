@@ -20,7 +20,7 @@ import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.concurrent.util.PartialAsyncConsumer;
-import net.lecousin.framework.event.SimpleEvent;
+import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.io.IO.Seekable.SeekType;
 import net.lecousin.framework.io.IOUtil;
@@ -54,7 +54,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 	protected boolean closed = true;
 	protected Async<IOException> spConnect;
 	protected boolean endOfInput = false;
-	private SimpleEvent onclosed = new SimpleEvent();
+	private Async<NoException> onclosed = new Async<>();
 	private Supplier<List<ByteBuffer>> dataToSendProvider = null;
 	private Async<IOException> dataToSendSP = null;
 	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
@@ -74,7 +74,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 	
 	@Override
 	public void onclosed(Runnable listener) {
-		onclosed.addListener(listener);
+		onclosed.onDone(listener);
 	}
 
 	protected void channelClosed() {
@@ -94,7 +94,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 			dataToSendProvider = null;
 		}
 		networkClient.channelClosed();
-		onclosed.fire();
+		onclosed.unblock();
 	}
 	
 	private class NetworkClient implements NetworkManager.Client, NetworkManager.TCPReceiver {

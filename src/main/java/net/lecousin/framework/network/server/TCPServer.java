@@ -171,9 +171,6 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			if (ch.isOpen())
 				try { ch.close(); }
 				catch (Exception e) { /* ignore */ }
-			for (AutoCloseable c : publicInterface.toClose)
-				try { c.close(); }
-				catch (Exception e) { /* ignore */ }
 			if (needSendLock)
 				sendLock.lock();
 			try {
@@ -191,12 +188,15 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					dataToSendSP = null;
 					dataToSendProvider = null;
 				}
-				publicInterface = null;
 				outputBuffers = null;
 			} finally {
 				if (needSendLock)
 					sendLock.unlock();
 			}
+			for (AutoCloseable c : publicInterface.toClose)
+				try { c.close(); }
+				catch (Exception e) { /* ignore */ }
+			publicInterface = null;
 		}
 		
 		public boolean isClosed() {

@@ -5,7 +5,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -15,7 +14,10 @@ import net.lecousin.framework.concurrent.async.AsyncSupplier;
 import net.lecousin.framework.concurrent.async.JoinPoint;
 import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.core.test.LCCoreAbstractTest;
+import net.lecousin.framework.io.FileIO;
 import net.lecousin.framework.io.IO;
+import net.lecousin.framework.io.IOUtil;
+import net.lecousin.framework.io.TemporaryFiles;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.security.BruteForceAttempt;
@@ -28,8 +30,6 @@ import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.tests.tcp.WelcomeProtocol;
 import net.lecousin.framework.plugins.ExtensionPoints;
 import net.lecousin.framework.serialization.SerializationException;
-import net.lecousin.framework.serialization.TypeDefinition;
-import net.lecousin.framework.xml.serialization.XMLDeserializer;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -212,17 +212,17 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Map<Class<?>, Object> instances = new HashMap<>();
 		JoinPoint<Exception> jp = new JoinPoint<>();
 		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			FileIO.ReadWrite tmp = TemporaryFiles.get().createAndOpenFileSync("test", "security");
 			IO.Readable input = app.getResource("tests-network-core/security/" + plugin.getClass().getName() + ".xml", Task.Priority.NORMAL);
-			AsyncSupplier<Object, SerializationException> res =
-				new XMLDeserializer(null, plugin.getClass().getSimpleName()).deserialize(
-					new TypeDefinition(plugin.getConfigurationClass()), input, new ArrayList<>(0));
+			IOUtil.copy(input, tmp, -1, true, null, 0).blockThrow(0);
+			AsyncSupplier<Object, SerializationException> res = NetworkSecurity.loadPluginConfiguration(plugin, tmp.getFile());
 			jp.addToJoin(1);
 			res.onDone(cfg -> {
 				NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
 				instance.clean();
 				instances.put(instance.getClass(), instance);
 				jp.joined();
-			}, err -> jp.error(err), cancel -> jp.cancel(cancel));
+			}, err -> jp.error(new Exception("Unable to read file for plugin " + plugin, err)), cancel -> jp.cancel(cancel));
 			input.closeAfter(res);
 		}
 		jp.start();
@@ -242,6 +242,20 @@ public class TestSecurity extends LCCoreAbstractTest {
 		Assert.assertFalse(bl.acceptAddress(ipv4));
 		
 		bl.clearAll();
+	}
+	
+	@Test
+	public void testLoadConfigurationError() throws Exception {
+		for (NetworkSecurityPlugin plugin : ExtensionPoints.getExtensionPoint(NetworkSecurityExtensionPoint.class).getPlugins()) {
+			FileIO.ReadWrite tmp = TemporaryFiles.get().createAndOpenFileSync("test", "security");
+			AsyncSupplier<Object, SerializationException> res = NetworkSecurity.loadPluginConfiguration(plugin, tmp.getFile());
+			try {
+				res.blockThrow(0);
+				throw new AssertionError();
+			} catch (SerializationException e) {
+				//ok
+			}
+		}
 	}
 	
 }

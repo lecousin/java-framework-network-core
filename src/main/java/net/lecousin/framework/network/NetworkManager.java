@@ -470,7 +470,7 @@ public class NetworkManager implements Closeable {
 				try {
 					processRegisterRequest(req);
 				} catch (ClosedChannelException e) {
-					if (logger.info()) logger.info("Channel closed while registering " + req.traceChannelOperations());
+					if (logger.debug()) logger.debug("Channel closed while registering " + req.traceChannelOperations());
 					if (req.listener != null)
 						channelClosed(req.listener);
 					req.result.error(e);
@@ -522,7 +522,7 @@ public class NetworkManager implements Closeable {
 					logger.error("Error calling listener", t);
 				}
 			} catch (CancelledKeyException e) {
-				if (logger.info()) logger.info("Cancelled key while registering " + req.traceChannelOperations());
+				if (logger.debug()) logger.debug("Cancelled key while registering " + req.traceChannelOperations());
 				listeners.channelClosed();
 				req.result.error(IO.error(e));
 			}
