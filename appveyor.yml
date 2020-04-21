@@ -1,5 +1,10 @@
 version: '{build}'
-os: Windows Server 2012
+image:
+ - Visual Studio 2019
+ - Visual Studio 2017
+ - Visual Studio 2015
+ - Visual Studio 2013
+
 install:
   - ps: |
       Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -13,6 +18,7 @@ install:
   - cmd: SET PATH=C:\maven\apache-maven-3.3.9\bin;%JAVA_HOME%\bin;%PATH%
   - cmd: SET MAVEN_OPTS=-Xmx1024m
   - cmd: SET JAVA_OPTS=-XX:+UseG1GC -Xmx1024m
+
 build_script:
   - mvn clean package --batch-mode -DskipTests
 test_script:
