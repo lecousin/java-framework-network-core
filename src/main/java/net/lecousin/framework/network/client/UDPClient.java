@@ -8,6 +8,7 @@ import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 
+import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
@@ -38,7 +39,8 @@ public class UDPClient implements Closeable {
 		}
 		
 		@Override
-		public void sendTimeout() {
+		public void sendTimeout(IOException err) {
+			LCCore.getApplication().getLoggerFactory().getLogger(UDPClient.class).error("Send timeout to server", err);
 			close();
 		}
 		

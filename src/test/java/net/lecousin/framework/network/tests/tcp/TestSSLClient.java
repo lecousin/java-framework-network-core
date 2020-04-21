@@ -5,6 +5,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import javax.net.ssl.SSLException;
 
@@ -13,7 +14,10 @@ import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
+import net.lecousin.framework.network.ssl.SSLConnectionConfig;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
+import net.lecousin.framework.network.tests.tcp.TestTCPReceiveDataProtocol.ReceiveDataProtocol;
+import net.lecousin.framework.network.tests.tcp.TestTCPSendDataProtocol.SendDataProtocol;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -26,7 +30,7 @@ public class TestSSLClient extends AbstractNetworkTest {
 			server.setProtocol(new WelcomeProtocol());
 			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 			
-			try (SSLClient client = new SSLClient()) {
+			try (SSLClient client = new SSLClient(new SSLConnectionConfig())) {
 				client.connect(serverAddress, 10000).blockThrow(0);
 				throw new AssertionError("Connect a SSLClient to a non SSL server must throw an SSLException");
 			} catch (SSLException e) {
@@ -55,7 +59,7 @@ public class TestSSLClient extends AbstractNetworkTest {
 			server.setProtocol(new SSLServerProtocol(new WelcomeProtocol()));
 			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 			
-			try (SSLClient client = new SSLClient()) {
+			try (SSLClient client = new SSLClient(new SSLConnectionConfig())) {
 				client.connect(serverAddress, 10000).blockThrow(0);
 				throw new AssertionError();
 			} catch (Exception e) {
@@ -70,7 +74,7 @@ public class TestSSLClient extends AbstractNetworkTest {
 			server.setProtocol(new SSLServerProtocol(sslTest, new WelcomeProtocol()));
 			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 			
-			try (SSLClient client = new SSLClient()) {
+			try (SSLClient client = new SSLClient(new SSLConnectionConfig())) {
 				client.connect(serverAddress, 0).blockThrow(0);
 				throw new AssertionError();
 			} catch (Exception e) {
@@ -81,9 +85,29 @@ public class TestSSLClient extends AbstractNetworkTest {
 	
 	@Test
 	public void testConnectWithHostname() throws Exception {
-		try (SSLClient client = new SSLClient()) {
-			client.setHostNames("google.com");
+		SSLConnectionConfig sslConfig = new SSLConnectionConfig();
+		sslConfig.setHostNames(Arrays.asList("google.com"));
+		try (SSLClient client = new SSLClient(sslConfig)) {
 			client.connect(new InetSocketAddress(InetAddress.getByName("google.com"), 443), 10000).blockThrow(0);
+		}
+	}
+	
+	@Test
+	public void testALPN() throws Exception {
+		try (TCPServer server = new TCPServer()) {
+			server.setProtocol(new SSLServerProtocol(sslTest, new WelcomeProtocol(), new SendDataProtocol(), new ReceiveDataProtocol()));
+			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
+			
+			SSLConnectionConfig sslConfig = new SSLConnectionConfig();
+			sslConfig.setContext(sslTest);
+			sslConfig.setApplicationProtocols(Arrays.asList("h2", "receive", "send", "welcome"));
+			try (SSLClient client = new SSLClient(sslConfig)) {
+				client.connect(serverAddress, 10000).blockThrow(0);
+				if (SSLConnectionConfig.ALPN_SUPPORTED)
+					Assert.assertEquals("send", client.getApplicationProtocol());
+				else
+					Assert.assertArrayEquals(new byte[] { 'W', 'e', 'l', 'c', 'o', 'm', 'e' }, client.getReceiver().readBytes(7, 10000).blockResult(0));
+			}
 		}
 	}
 	
@@ -93,7 +117,9 @@ public class TestSSLClient extends AbstractNetworkTest {
 			server.setProtocol(new SSLServerProtocol(sslTest, new WelcomeProtocol()));
 			SocketAddress serverAddress = server.bind(new InetSocketAddress("localhost", 0), 0).blockResult(0);
 		
-			try (SSLClient client = new SSLClient(sslTest)) {
+			SSLConnectionConfig sslConfig = new SSLConnectionConfig();
+			sslConfig.setContext(sslTest);
+			try (SSLClient client = new SSLClient(sslConfig)) {
 				TCPClient tunnel = new TCPClient();
 				tunnel.connect(serverAddress, 0).blockThrow(0);
 				Async<IOException> connection = new Async<>();

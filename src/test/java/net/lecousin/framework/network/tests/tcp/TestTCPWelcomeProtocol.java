@@ -352,7 +352,7 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 			// ok
 		}
 		
-		TCPClient client = useSSL ? new SSLClient() : new TCPClient();
+		TCPClient client = useSSL ? new SSLClient(clientSSLConfig) : new TCPClient();
 		Async<IOException> sp = client.connect(new InetSocketAddress("0.0.0.1", 80), 10000);
 		try {
 			sp.blockThrow(0);

@@ -5,15 +5,12 @@ import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.security.GeneralSecurityException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Supplier;
 
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 
 import net.lecousin.framework.collections.TurnArray;
@@ -24,6 +21,7 @@ import net.lecousin.framework.concurrent.async.LockPoint;
 import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.network.SocketOptionValue;
+import net.lecousin.framework.network.ssl.SSLConnectionConfig;
 import net.lecousin.framework.network.ssl.SSLLayer;
 import net.lecousin.framework.util.Triple;
 
@@ -33,30 +31,16 @@ import net.lecousin.framework.util.Triple;
 public class SSLClient extends TCPClient {
 
 	/** Constructor. */
-	public SSLClient(SSLContext context) {
-		ssl = new SSLLayer(context);
-	}
-	
-	/** Constructor. */
-	public SSLClient() throws GeneralSecurityException {
-		this(SSLContext.getDefault());
+	public SSLClient(SSLConnectionConfig config) {
+		ssl = new SSLLayer(config);
 	}
 	
 	private SSLLayer ssl;
+	private String applicationProtocol;
 	private final TurnArray<ByteBuffer> receivedData = new TurnArray<>(5);
 
 	private static final String CONNECT_ATTRIBUTE = "sslclient.connect";
 	private static final String WAITING_DATA_ATTRIBUTE = "sslclient.waitfordata";
-	
-	/** Configure the SSL layer to accept the given hostnames. */
-	public void setHostNames(String... hostNames) {
-		ssl.setHostNames(Arrays.asList(hostNames));
-	}
-
-	/** Configure the SSL layer to accept the given hostnames. */
-	public void setHostNames(List<String> hostNames) {
-		ssl.setHostNames(hostNames);
-	}
 	
 	private final SSLLayer.TCPConnection sslClient = new SSLLayer.TCPConnection() {
 		
@@ -99,7 +83,8 @@ public class SSLClient extends TCPClient {
 		}
 		
 		@Override
-		public void handshakeDone() {
+		public void handshakeDone(String alpn) {
+			applicationProtocol = alpn;
 			@SuppressWarnings("unchecked")
 			Async<IOException> sp = (Async<IOException>)getAttribute(CONNECT_ATTRIBUTE);
 			sp.unblock();
@@ -225,6 +210,15 @@ public class SSLClient extends TCPClient {
 			ssl.startConnection(sslClient, true, timeout);
 			return null;
 		}).start();
+	}
+	
+	/**
+	 * Return the application protocol negotiated using ALPN.
+	 * It is only available once connection and handshake is done, and only if specific
+	 * protocols have been requested and that one is matching the protocols offer by the server.
+	 */
+	public String getApplicationProtocol() {
+		return applicationProtocol;
 	}
 	
 	@Override

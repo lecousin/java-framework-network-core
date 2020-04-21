@@ -147,6 +147,8 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		private Async<IOException> dataToSendSP = null;
 		private LockPoint<NoException> sendLock = new LockPoint<>();
 		
+		private static final String CTX_ATTRIBUTE_SEND_LOCK = "TCPServer.send.lock";
+		
 		public TCPServer getServer() {
 			return TCPServer.this;
 		}
@@ -171,6 +173,11 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 			if (ch.isOpen())
 				try { ch.close(); }
 				catch (Exception e) { /* ignore */ }
+			if (needSendLock) {
+				Task.Context ctx = Task.getCurrentContext();
+				if (ctx != null)
+					needSendLock = ctx.getAttribute(CTX_ATTRIBUTE_SEND_LOCK) != sendLock;
+			}
 			if (needSendLock)
 				sendLock.lock();
 			try {
@@ -204,8 +211,9 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		@Override
-		public void sendTimeout() {
+		public void sendTimeout(IOException err) {
 			// nothing, client will be closed
+			manager.getLogger().error("Send timeout to client", err);
 		}
 		
 		public synchronized void waitForData(int timeout) throws ClosedChannelException {
@@ -239,7 +247,9 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {
+			Task.Context ctx = Task.getCurrentContext();
 			sendLock.lock();
+			ctx.setAttribute(CTX_ATTRIBUTE_SEND_LOCK, sendLock);
 			try {
 				if (channel == null || !channel.isConnected()) throw new ClosedChannelException();
 				// ask the protocol to do any needed processing before sending the data
@@ -265,6 +275,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					manager.register(channel, SelectionKey.OP_WRITE, this, timeout);
 				return sp;
 			} finally {
+				ctx.removeAttribute(CTX_ATTRIBUTE_SEND_LOCK);
 				sendLock.unlock();
 			}
 		}
@@ -322,7 +333,9 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		@Override
 		@SuppressWarnings("java:S3776") // complexity
 		public void readyToSend() {
+			Task.Context ctx = Task.getCurrentContext();
 			sendLock.lock();
+			ctx.setAttribute(CTX_ATTRIBUTE_SEND_LOCK, sendLock);
 			try {
 				do {
 					if (outputBuffers == null || channel == null) return;
@@ -378,6 +391,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 					break;
 				} while (true);
 			} finally {
+				ctx.removeAttribute(CTX_ATTRIBUTE_SEND_LOCK);
 				sendLock.unlock();
 			}
 		}
@@ -414,7 +428,9 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		}
 		
 		public void newDataToSendWhenPossible(Supplier<List<ByteBuffer>> dataProvider, Async<IOException> sp, int timeout) {
+			Task.Context ctx = Task.getCurrentContext();
 			sendLock.lock();
+			ctx.setAttribute(CTX_ATTRIBUTE_SEND_LOCK, sendLock);
 			Async<IOException> prevSP;
 			try {
 				if (channel == null || !channel.isConnected() || outputBuffers == null) {
@@ -428,6 +444,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 				if (!waitToSend && outputBuffers.isEmpty() && prevProvider == null)
 					manager.register(channel, SelectionKey.OP_WRITE, Client.this, timeout);
 			} finally {
+				ctx.removeAttribute(CTX_ATTRIBUTE_SEND_LOCK);
 				sendLock.unlock();
 			}
 			if (prevSP != null)

@@ -8,7 +8,7 @@
 
   <groupId>net.lecousin.framework.network</groupId>
   <artifactId>core</artifactId>
-  <version>0.8.4</version>
+  <version>0.9.0-SNAPSHOT</version>
   
   <name>lecousin.net Java framework - network - core</name>
   <description>Core network functionalities</description>
@@ -50,8 +50,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <sonar.test.exclusions>**/src/test/**/*</sonar.test.exclusions>
-    <core.version>0.20.7</core.version>
-    <serialization.version>0.3.0</serialization.version>
+    <core.version>0.21.0-SNAPSHOT</core.version>
+    <serialization.version>0.3.1-SNAPSHOT</serialization.version>
   </properties>
 
   <dependencies>

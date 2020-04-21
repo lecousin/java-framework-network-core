@@ -12,12 +12,17 @@ import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.io.util.DataUtil;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.server.TCPServerClient;
-import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.server.protocol.ALPNServerProtocol;
 
 import org.junit.Assert;
 
-public class WelcomeProtocol implements ServerProtocol {
+public class WelcomeProtocol implements ALPNServerProtocol {
 
+	@Override
+	public String getALPNName() {
+		return "welcome";
+	}
+	
 	@Override
 	public int startProtocol(TCPServerClient client) {
 		client.send(ByteBuffer.wrap(new String("Welcome\n").getBytes(StandardCharsets.US_ASCII)), 5000);

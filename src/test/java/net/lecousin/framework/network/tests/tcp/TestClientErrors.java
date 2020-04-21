@@ -23,7 +23,7 @@ public class TestClientErrors extends AbstractTestTCP {
 	
 	@Test
 	public void testSendWithoutConnection() throws Exception {
-		try (TCPClient client = useSSL ? new SSLClient() : new TCPClient()) {
+		try (TCPClient client = useSSL ? new SSLClient(clientSSLConfig) : new TCPClient()) {
 			client.send(ByteBuffer.wrap(new byte[] { 50 }), 5000).blockThrow(10000);
 			throw new AssertionError("Sending data using a not connected client must throw an IOException");
 		} catch (IOException e) {
@@ -33,7 +33,7 @@ public class TestClientErrors extends AbstractTestTCP {
 	
 	@Test
 	public void testReceiveWithoutConnection() throws Exception {
-		try (TCPClient client = useSSL ? new SSLClient() : new TCPClient()) {
+		try (TCPClient client = useSSL ? new SSLClient(clientSSLConfig) : new TCPClient()) {
 			client.receiveData(1024, 8000).blockThrow(10000);
 			throw new AssertionError("Receiving data using a not connected client must throw an IOException");
 		} catch (IOException e) {
@@ -43,7 +43,7 @@ public class TestClientErrors extends AbstractTestTCP {
 	
 	@Test
 	public void testConnectTwice() throws Exception {
-		try (TCPClient client = useSSL ? new SSLClient() : new TCPClient()) {
+		try (TCPClient client = useSSL ? new SSLClient(clientSSLConfig) : new TCPClient()) {
 			Async<IOException> sp = client.connect(serverAddress, 10000);
 			sp = client.connect(serverAddress, 10000);
 			try {

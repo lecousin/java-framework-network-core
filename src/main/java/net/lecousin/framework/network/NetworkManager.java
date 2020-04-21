@@ -23,6 +23,7 @@ import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.threads.ApplicationThread;
 import net.lecousin.framework.concurrent.threads.Task;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.log.Logger;
@@ -107,11 +108,12 @@ public class NetworkManager implements Closeable {
 		/** Called if a timeout was specified when registering, and the channel is not yet ready to send
 		 * data after the specified timeout.
 		 */
-		void sendTimeout();
+		void sendTimeout(IOException err);
 	}
 
 	@SuppressWarnings("squid:S00112") // use of RUntimeException
 	private NetworkManager(Application app) {
+		this.app = app;
 		logger = app.getLoggerFactory().getLogger("network");
 		dataLogger = app.getLoggerFactory().getLogger("network-data");
 		logger.info("Starting Network Manager for application " + app.getGroupId() + "-" + app.getArtifactId());
@@ -127,7 +129,7 @@ public class NetworkManager implements Closeable {
 			if (bl == null)
 				logger.error("Network security does not contain IPBlackList for application "
 					+ app.getGroupId() + "-" + app.getArtifactId());
-			worker = app.getThreadFactory().newThread(new WorkerLoop(bl));
+			worker = app.createThread(new WorkerLoop(bl));
 			worker.setName("Network Manager");
 			worker.start();
 		});
@@ -149,6 +151,7 @@ public class NetworkManager implements Closeable {
 		return nm;
 	}
 	
+	private Application app;
 	private Logger logger;
 	private Logger dataLogger;
 	private Selector selector;
@@ -183,31 +186,37 @@ public class NetworkManager implements Closeable {
 		private Client onConnect;
 		private long connectStart;
 		private int onConnectTimeout;
+		private Exception connectStack;
 		private Receiver onRead;
 		private long readStart;
+		private Exception readStack;
 		private int onReadTimeout;
 		private Sender onWrite;
 		private long writeStart;
 		private int onWriteTimeout;
+		private Exception writeStack;
 		
-		public void set(int ops, Listener listener, int timeout) {
+		public void set(int ops, Listener listener, int timeout, Exception stack) {
 			if ((ops & SelectionKey.OP_ACCEPT) != 0)
 				onAccept = (Server)listener;
 			if ((ops & SelectionKey.OP_CONNECT) != 0) {
 				onConnect = (Client)listener;
 				onConnectTimeout = timeout;
+				connectStack = stack;
 				if (timeout > 0)
 					connectStart = System.currentTimeMillis();
 			}
 			if ((ops & SelectionKey.OP_READ) != 0) {
 				onRead = (Receiver)listener;
 				onReadTimeout = timeout;
+				readStack = stack;
 				if (timeout > 0)
 					readStart = System.currentTimeMillis();
 			}
 			if ((ops & SelectionKey.OP_WRITE) != 0) {
 				onWrite = (Sender)listener;
 				onWriteTimeout = timeout;
+				writeStack = stack;
 				if (timeout > 0)
 					writeStart = System.currentTimeMillis();
 			}
@@ -266,8 +275,7 @@ public class NetworkManager implements Closeable {
 		req.result = new AsyncSupplier<>();
 		if (logger.trace())
 			logger.trace("Registering " + req.traceChannelOperations());
-		if (logger.debug())
-			req.registerStack = new Exception("registration was here");
+		req.registerStack = new Exception("Request stack trace");
 		synchronized (requests) {
 			requests.addLast(req);
 		}
@@ -281,7 +289,7 @@ public class NetworkManager implements Closeable {
 		return new AsyncSupplier<>(null, error);
 	}
 	
-	private class WorkerLoop implements Runnable {
+	private class WorkerLoop implements ApplicationThread {
 		
 		private WorkerLoop(IPBlackList blacklist) {
 			this.blacklist = blacklist;
@@ -290,19 +298,26 @@ public class NetworkManager implements Closeable {
 		private long workingTime = 0;
 		private long waitingTime = 0;
 		private IPBlackList blacklist;
+		private String status = "Init";
+		
+		@Override
+		public Application getApplication() {
+			return app;
+		}
 		
 		@Override
 		@SuppressWarnings({
-			"squid:S3776", "squid:S1141", // we keep complexity and nested try for performance
-			"squid:S1193" // instanceof IOException
+			"squid:S3776", "squid:S1141" // we keep complexity and nested try for performance
 		})
 		public void run() {
 			long start = System.nanoTime();
 			int loopCount = 0;
 			while (!stop) {
+				status = "Processing register requests";
 				processRegisterRequests();
 				if (stop) break;
 				Set<SelectionKey> keys = selector.selectedKeys();
+				status = "Processing ready channels: " + keys.size();
 				if (!keys.isEmpty()) {
 					boolean trace = logger.trace();
 					if (trace) logger.trace(keys.size() + " network channels are ready for operations");
@@ -334,13 +349,10 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
 							// a socket is connected
 							Client client = listeners.onConnect;
-							if (trace)
-								logger.trace("A socket is ready to be connected: " + key.channel().toString());
 							try {
-								((SocketChannel)key.channel()).finishConnect();
 								key.interestOps(0);
 								listeners.reset();
-								connected(client);
+								connected((SocketChannel)key.channel(), client);
 							} catch (Exception e) {
 								if (logger.info())
 									logger.info("Connection failed: " + key.channel().toString());
@@ -351,57 +363,16 @@ public class NetworkManager implements Closeable {
 						}
 						if ((ops & SelectionKey.OP_READ) != 0) {
 							// data received
-							Receiver receiver = listeners.onRead;
-							ByteBuffer buffer = null;
 							try {
-								buffer = receiver.allocateReceiveBuffer();
-								if (receiver instanceof TCPReceiver) {
-									TCPReceiver tcp = (TCPReceiver)receiver;
-									int nb = ((ReadableByteChannel)key.channel()).read(buffer);
-									if (nb < 0) {
-										if (trace)
-											logger.trace("End of stream reached for socket: "
-												+ key.channel().toString());
-										key.interestOps(0);
-										listeners.reset();
-										endOfInput(tcp, buffer);
-									} else {
-										while (buffer.hasRemaining()) {
-											int nb2 = ((ReadableByteChannel)key.channel()).read(buffer);
-											if (nb2 <= 0) break;
-											nb += nb2;
-										}
-										try {
-											int iops = key.interestOps();
-											key.interestOps(iops - (iops & SelectionKey.OP_READ));
-										} catch (CancelledKeyException e) {
-											// ignore
-										}
-										listeners.onRead = null;
-										listeners.onReadTimeout = 0;
-										dataReceived(tcp, buffer, nb, key.channel());
-									}
-								} else {
-									UDPReceiver udp = (UDPReceiver)receiver;
-									SocketAddress source = ((DatagramChannel)key.channel()).receive(buffer);
-									try {
-										int iops = key.interestOps();
-										key.interestOps(iops - (iops & SelectionKey.OP_READ));
-										listeners.onRead = null;
-										listeners.onReadTimeout = 0;
-									} catch (CancelledKeyException e) {
-										/* ignore */
-									}
-									dataReceived(udp, buffer, source);
-								}
-							} catch (Exception e) {
-								if (logger.error() && !(e instanceof IOException))
-									logger.error("Error while receiving data from network on "
-										+ key.channel().toString(), e);
-								receiveError(receiver, e, buffer);
-								resetAndClose(key);
-								channelClosed(receiver);
+								int iops = key.interestOps();
+								key.interestOps(iops - (iops & SelectionKey.OP_READ));
+							} catch (CancelledKeyException e) {
+								// ignore
 							}
+							Receiver receiver = listeners.onRead;
+							listeners.onRead = null;
+							listeners.onReadTimeout = 0;
+							dataReceived(key.channel(), receiver);
 						}
 						if ((ops & SelectionKey.OP_WRITE) != 0) {
 							Sender sender = listeners.onWrite;
@@ -427,6 +398,7 @@ public class NetworkManager implements Closeable {
 					}
 					continue;
 				}
+				status = "Checking timeouts";
 				loopCount = 0;
 				long nextTimeout = checkTimeouts();
 				synchronized (requests) {
@@ -435,6 +407,7 @@ public class NetworkManager implements Closeable {
 				if (logger.trace()) logger.trace("NetworkManager is waiting for operations");
 				long now = System.nanoTime();
 				workingTime += now - start;
+				status = "Waiting";
 				try {
 					if (nextTimeout > 0) {
 						long ms = nextTimeout - System.currentTimeMillis();
@@ -452,12 +425,18 @@ public class NetworkManager implements Closeable {
 				start = System.nanoTime();
 				waitingTime += start - now;
 			}
+			status = "Closing";
 			try { selector.close(); }
 			catch (Exception e) { /* ignore */ }
 			if (logger.info())
 				logger.info("Network Manager closed, worked during "
 					+ String.format("%.5f", Double.valueOf(workingTime * 1.d / 1000000000))
 					+ "s., waited " + String.format("%.5f", Double.valueOf(waitingTime * 1.d / 1000000000)) + "s.");
+		}
+		
+		@Override
+		public void debugStatus(StringBuilder s) {
+			s.append(" - Network: ").append(status).append('\n');
 		}
 	
 		private void processRegisterRequests() {
@@ -483,7 +462,7 @@ public class NetworkManager implements Closeable {
 			SelectionKey key = req.channel.keyFor(selector);
 			if (key == null) {
 				Attachment listeners = new Attachment();
-				listeners.set(req.newOps, req.listener, req.timeout);
+				listeners.set(req.newOps, req.listener, req.timeout, req.registerStack);
 				key = req.channel.register(selector, req.newOps, listeners);
 				if (logger.trace()) logger.trace("Registered: " + req.traceChannelOperations());
 				req.result.unblockSuccess(key);
@@ -495,7 +474,7 @@ public class NetworkManager implements Closeable {
 				int conflict = curOps & req.newOps;
 				if (conflict == 0) {
 					key.interestOps(curOps | req.newOps);
-					listeners.set(req.newOps, req.listener, req.timeout);
+					listeners.set(req.newOps, req.listener, req.timeout, req.registerStack);
 					if (logger.trace())
 						logger.trace("Registered: " + req.traceChannelOperations());
 					req.result.unblockSuccess(key);
@@ -538,7 +517,7 @@ public class NetworkManager implements Closeable {
 				if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
 					if (now > listeners.connectStart + listeners.onConnectTimeout) {
 						connectionFailed(listeners.onConnect,
-							new IOException("Connection timeout after " + listeners.onConnectTimeout + "ms."));
+							timeout(key, "Connection", listeners.onConnectTimeout, listeners.connectStack));
 						key.cancel();
 						continue;
 					}
@@ -548,7 +527,7 @@ public class NetworkManager implements Closeable {
 				if (listeners.onRead != null && listeners.onReadTimeout > 0) {
 					if (now > listeners.readStart + listeners.onReadTimeout) {
 						receiveError(listeners.onRead,
-							new IOException("Network read timeout after " + listeners.onReadTimeout + "ms."), null);
+							timeout(key, "Receive", listeners.onReadTimeout, listeners.readStack), null);
 						resetAndClose(key);
 						continue;
 					}
@@ -561,8 +540,11 @@ public class NetworkManager implements Closeable {
 						key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
 						Sender sender = listeners.onWrite;
 						listeners.onWrite = null;
+						int to = listeners.onWriteTimeout;
 						listeners.onWriteTimeout = 0;
-						sendTimeout(sender);
+						Exception stack = listeners.writeStack;
+						listeners.writeStack = null;
+						sendTimeout(sender, timeout(key, "Send", to, stack));
 						continue;
 					}
 					if (listeners.writeStart + listeners.onWriteTimeout < nextTimeout)
@@ -572,6 +554,16 @@ public class NetworkManager implements Closeable {
 			if (nextTimeout == Long.MAX_VALUE)
 				nextTimeout = 0;
 			return nextTimeout;
+		}
+		
+		private IOException timeout(SelectionKey key, String type, int timeout, Exception stack) {
+			StringBuilder err = new StringBuilder(1024);
+			err.append(type).append(" timeout after ").append(timeout).append("ms.");
+			err.append(" on ").append(key.channel());
+			err.append(" [state ").append(key.readyOps()).append("/").append(key.interestOps()).append("]\n");
+			if (stack != null)
+				DebugUtil.createStackTrace(err, stack, false);
+			return new IOException(err.toString());
 		}
 		
 		private void resetAndClose(SelectionKey key) {
@@ -612,8 +604,18 @@ public class NetworkManager implements Closeable {
 			}).start();
 		}
 		
-		private void connected(Client client) {
-			Task.cpu("Call Client.connected", Task.Priority.NORMAL, t -> {
+		private void connected(SocketChannel channel, Client client) {
+			Task.cpu("Finish connection", Task.Priority.NORMAL, t -> {
+				if (logger.trace())
+					logger.trace("A socket is ready to be connected: " + channel);
+				try {
+					channel.finishConnect();
+				} catch (Exception e) {
+					if (logger.info())
+						logger.info("Connection failed: " + channel);
+					client.connectionFailed(IO.error(e));
+					return null;
+				}
 				client.connected();
 				return null;
 			}).start();
@@ -626,33 +628,56 @@ public class NetworkManager implements Closeable {
 			}).start();
 		}
 		
-		private void dataReceived(TCPReceiver receiver, ByteBuffer buffer, int nb, SelectableChannel channel) {
-			Task.cpu("Call TCPReceiver.received", Task.Priority.NORMAL, t -> {
-				buffer.flip();
-				if (dataLogger.trace()) {
-					StringBuilder s = new StringBuilder(nb * 5 + 256);
-					s.append(nb).append(" bytes received on ");
-					s.append(channel.toString());
-					s.append("\r\n");
-					DebugUtil.dumpHex(s, buffer);
-					traceData(s);
+		@SuppressWarnings({
+			"java:S3776", // complexity
+			"squid:S1193" // instanceof IOException
+		}) 
+		private void dataReceived(SelectableChannel channel, Receiver receiver) {
+			Task.cpu("Data received from network", Task.Priority.NORMAL, t -> {
+				ByteBuffer buffer = null;
+				try {
+					buffer = receiver.allocateReceiveBuffer();
+					if (receiver instanceof TCPReceiver) {
+						TCPReceiver tcp = (TCPReceiver)receiver;
+						int nb = ((ReadableByteChannel)channel).read(buffer);
+						if (nb < 0) {
+							if (logger.trace())
+								logger.trace("End of stream reached for socket: " + channel);
+							tcp.endOfInput(buffer);
+						} else {
+							while (buffer.hasRemaining()) {
+								int nb2 = ((ReadableByteChannel)channel).read(buffer);
+								if (nb2 <= 0) break;
+								nb += nb2;
+							}
+							buffer.flip();
+							if (dataLogger.trace()) {
+								StringBuilder s = new StringBuilder(nb * 5 + 256);
+								s.append(nb).append(" bytes received on ");
+								s.append(channel.toString());
+								s.append("\r\n");
+								DebugUtil.dumpHex(s, buffer);
+								traceData(s);
+							}
+							tcp.received(buffer);
+						}
+						return null;
+					}
+					UDPReceiver udp = (UDPReceiver)receiver;
+					SocketAddress source = ((DatagramChannel)channel).receive(buffer);
+					buffer.flip();
+					udp.received(buffer, source);
+				} catch (Exception e) {
+					if (logger.error() && !(e instanceof IOException))
+						logger.error("Error while receiving data from network on " + channel, e);
+					receiver.receiveError(IO.error(e), buffer);
+					try {
+						channel.close();
+					} catch (Exception e2) {
+						// ignore
+					}
+					channelClosed(receiver);
 				}
-				receiver.received(buffer);
-				return null;
-			}).start();
-		}
-		
-		private void dataReceived(UDPReceiver receiver, ByteBuffer buffer, SocketAddress source) {
-			Task.cpu("Call UDPReceiver.received", Task.Priority.NORMAL, t -> {
-				buffer.flip();
-				receiver.received(buffer, source);
-				return null;
-			}).start();
-		}
-		
-		private void endOfInput(TCPReceiver receiver, ByteBuffer buffer) {
-			Task.cpu("Call TCPReceiver.endOfInput", Task.Priority.NORMAL, t -> {
-				receiver.endOfInput(buffer);
 				return null;
 			}).start();
 		}
@@ -671,9 +696,9 @@ public class NetworkManager implements Closeable {
 			}).start();
 		}
 		
-		private void sendTimeout(Sender sender) {
+		private void sendTimeout(Sender sender, IOException err) {
 			Task.cpu("Call Sender.sendTimeout", Task.Priority.RATHER_LOW, t -> {
-				sender.sendTimeout();
+				sender.sendTimeout(err);
 				return null;
 			}).start();
 		}

@@ -21,8 +21,10 @@ import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServer;
+import net.lecousin.framework.network.server.protocol.ALPNServerProtocol;
 import net.lecousin.framework.network.server.protocol.SSLServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.ssl.SSLConnectionConfig;
 import net.lecousin.framework.network.test.AbstractNetworkTest;
 
 import org.junit.After;
@@ -51,21 +53,28 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 	protected AbstractTestTCP(boolean useSSL, boolean useIPv6) {
 		this.useSSL = useSSL;
 		this.useIPv6 = useIPv6;
+		this.clientSSLConfig = new SSLConnectionConfig();
+		this.clientSSLConfig.setContext(sslTest);
 	}
 	
 	protected boolean useSSL;
 	protected boolean useIPv6;
 	protected TCPServer server;
 	protected SocketAddress serverAddress;
+	protected SSLConnectionConfig clientSSLConfig;
 	
 	protected abstract ServerProtocol createProtocol();
+	
+	protected ALPNServerProtocol[] createALPNProtocols() {
+		return new ALPNServerProtocol[0];
+	}
 	
 	@Before
 	public void initTCPServer() throws IOException, CancelException {
 		server = new TCPServer();
 		ServerProtocol protocol = createProtocol();
 		if (useSSL)
-			protocol = new SSLServerProtocol(sslTest, protocol);
+			protocol = new SSLServerProtocol(sslTest, protocol, createALPNProtocols());
 		server.setProtocol(protocol);
 		if (useIPv6)
 			serverAddress = server.bind(new InetSocketAddress(NetUtil.getLoopbackIPv6Address(), 0), 0).blockResult(0);
@@ -93,7 +102,7 @@ public abstract class AbstractTestTCP extends AbstractNetworkTest {
 	protected TCPClient connectClient(SocketOptionValue<?>... options) throws Exception {
 		TCPClient client;
 		if (useSSL)
-			client = new SSLClient(sslTest);
+			client = new SSLClient(clientSSLConfig);
 		else
 			client = new TCPClient();
 		Assert.assertNull(client.getLocalAddress());

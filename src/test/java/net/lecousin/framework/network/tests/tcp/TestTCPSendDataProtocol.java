@@ -3,13 +3,18 @@ package net.lecousin.framework.network.tests.tcp;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import net.lecousin.framework.concurrent.Executable;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.concurrent.threads.Task.Priority;
+import net.lecousin.framework.exception.NoException;
 import net.lecousin.framework.mutable.Mutable;
 import net.lecousin.framework.mutable.MutableInteger;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
+import net.lecousin.framework.network.server.protocol.ALPNServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 
 import org.junit.AfterClass;
@@ -36,27 +41,37 @@ public class TestTCPSendDataProtocol extends AbstractTestTCP {
 	
 	private static void sendDataLoop(TCPRemote remote) {
 		byte[][] data = generateDataToSend();
-		for (int i = 0; i < NB_BLOCKS; ++i) {
-			remote.send(ByteBuffer.wrap(data[i]), 5000);
-			if ((i % 20) == 0)
-				try { Thread.sleep(400); }
-				catch (InterruptedException e) {}
-			else if ((i % 5) == 0)
-				try { Thread.sleep(100); }
-				catch (InterruptedException e) {}
+		MutableInteger i = new MutableInteger(0);
+		Mutable<Executable<Void, NoException>> exec = new Mutable<>(null);
+		exec.set(t -> {
+			remote.send(ByteBuffer.wrap(data[i.get()]), 5000);
+			if (i.get() == NB_BLOCKS - 1)
+				return null;
+			long wait = 0;
+			if ((i.get() % 20) == 0)
+				wait = 400;
+			else if ((i.get() % 5) == 0)
+				wait = 100;
+			i.inc();
+			Task.cpu("Send data in loop", Priority.NORMAL, exec.get()).executeIn(wait).start();
+			return null;
+		});
+		try {
+			exec.get().execute(null);
+		} catch (Exception e) {
 		}
 	}
 	
-	private static class SendDataProtocol implements ServerProtocol {
+	public static class SendDataProtocol implements ALPNServerProtocol {
 
 		@Override
+		public String getALPNName() {
+			return "send";
+		}
+		
+		@Override
 		public int startProtocol(TCPServerClient client) {
-			new Thread() {
-				@Override
-				public void run() {
-					sendDataLoop(client);
-				}
-			}.start();
+			sendDataLoop(client);
 			return -1;
 		}
 

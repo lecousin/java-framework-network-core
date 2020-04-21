@@ -7,6 +7,7 @@ import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.TCPRemote;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
+import net.lecousin.framework.network.server.protocol.ALPNServerProtocol;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 
 import org.junit.AfterClass;
@@ -44,7 +45,12 @@ public class TestTCPReceiveDataProtocol extends AbstractTestTCP {
 		}
 	}
 	
-	private static class ReceiveDataProtocol implements ServerProtocol {
+	public static class ReceiveDataProtocol implements ALPNServerProtocol {
+		
+		@Override
+		public String getALPNName() {
+			return "receive";
+		}
 
 		@Override
 		public int startProtocol(TCPServerClient client) {

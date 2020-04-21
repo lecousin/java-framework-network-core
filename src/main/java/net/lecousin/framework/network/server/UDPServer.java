@@ -74,8 +74,9 @@ public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel
 		}
 
 		@Override
-		public void sendTimeout() {
+		public void sendTimeout(IOException err) {
 			// nothing to do
+			manager.getLogger().error("Send timeout to client", err);
 		}
 		
 		@Override

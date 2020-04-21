@@ -497,7 +497,8 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 		}
 		
 		@Override
-		public void sendTimeout() {
+		public void sendTimeout(IOException err) {
+			logger.error("Send timeout to server", err);
 			close();
 		}
 		

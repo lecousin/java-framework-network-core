@@ -5,8 +5,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
@@ -14,6 +16,7 @@ import javax.net.ssl.SSLException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.network.server.TCPServerClient;
+import net.lecousin.framework.network.ssl.SSLConnectionConfig;
 import net.lecousin.framework.network.ssl.SSLLayer;
 
 /**
@@ -22,9 +25,28 @@ import net.lecousin.framework.network.ssl.SSLLayer;
 public class SSLServerProtocol implements ServerProtocol {
 
 	/** Constructor. */
-	public SSLServerProtocol(SSLContext context, ServerProtocol protocol) {
-		this.ssl = new SSLLayer(context);
+	public SSLServerProtocol(SSLContext context, ServerProtocol protocol, ALPNServerProtocol... alpnProtocols) {
+		SSLConnectionConfig sslConfig = new SSLConnectionConfig();
+		sslConfig.setContext(context);
 		this.protocol = protocol;
+		if (alpnProtocols.length == 0 || !SSLConnectionConfig.ALPN_SUPPORTED) {
+			this.protocols = null;
+		} else {
+			this.protocols = new HashMap<>(Math.max(3, Math.min(alpnProtocols.length, 10)));
+			List<String> alpns = new LinkedList<>();
+			for (ALPNServerProtocol p : alpnProtocols) {
+				this.protocols.put(p.getALPNName(), p);
+				alpns.add(p.getALPNName());
+			}
+			if (protocol instanceof ALPNServerProtocol) {
+				ALPNServerProtocol p = (ALPNServerProtocol)protocol;
+				this.protocols.put(p.getALPNName(), p);
+				if (!alpns.contains(p.getALPNName()))
+					alpns.add(p.getALPNName());
+			}
+			sslConfig.setApplicationProtocols(alpns);
+		}
+		this.ssl = new SSLLayer(sslConfig);
 	}
 
 	/** Constructor. */
@@ -34,12 +56,15 @@ public class SSLServerProtocol implements ServerProtocol {
 
 	private SSLLayer ssl;
 	private ServerProtocol protocol;
+	private Map<String, ALPNServerProtocol> protocols;
 	
 	public ServerProtocol getInnerProtocol() {
 		return protocol;
 	}
 	
 	private class Client implements SSLLayer.TCPConnection {
+		
+		private ServerProtocol selectedProtocol;
 		
 		public Client(TCPServerClient client) {
 			this.client = client;
@@ -83,9 +108,13 @@ public class SSLServerProtocol implements ServerProtocol {
 		}
 		
 		@Override
-		public void handshakeDone() {
+		public void handshakeDone(String alpn) {
+			if (alpn == null || protocols == null)
+				selectedProtocol = protocol;
+			else
+				selectedProtocol = protocols.get(alpn);
 			// start the next protocol
-			int recvTimeout = protocol.startProtocol(client);
+			int recvTimeout = selectedProtocol.startProtocol(client);
 			if (recvTimeout >= 0)
 				try { client.waitForData(recvTimeout); }
 				catch (ClosedChannelException e) { client.closed(); }
@@ -121,7 +150,7 @@ public class SSLServerProtocol implements ServerProtocol {
 				}
 				buf.flip();
 			}
-			protocol.dataReceivedFromClient(client, buf);
+			selectedProtocol.dataReceivedFromClient(client, buf);
 		}
 		
 		@Override

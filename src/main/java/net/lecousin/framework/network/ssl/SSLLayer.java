@@ -3,19 +3,13 @@ package net.lecousin.framework.network.ssl;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.security.GeneralSecurityException;
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
-import javax.net.ssl.SNIHostName;
-import javax.net.ssl.SNIServerName;
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLParameters;
 
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.concurrent.Executable;
@@ -46,8 +40,10 @@ public class SSLLayer {
 		/** Close the connection. */
 		void close();
 		
-		/** Called once the SSL handshake has been successfully done. */
-		void handshakeDone();
+		/** Called once the SSL handshake has been successfully done.
+		 * @param alpn if protocol negotiation occurred during handshake, the negotiated protocol is given, else null is given
+		 */
+		void handshakeDone(String alpn);
 		
 		/** Called if the SSL handshake fail. */
 		void handshakeError(SSLException error);
@@ -67,21 +63,15 @@ public class SSLLayer {
 	}
 
 	/** Constructor. */
-	public SSLLayer(SSLContext context) {
-		this.context = context;
+	public SSLLayer(SSLConnectionConfig config) {
+		this.config = config;
 		this.logger = LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class);
 		this.bufferCache = ByteArrayCache.getInstance();
 	}
 
-	/** Constructor. */
-	public SSLLayer() throws GeneralSecurityException {
-		this(SSLContext.getDefault());
-	}
-	
 	private Logger logger;
 	private ByteArrayCache bufferCache;
-	private SSLContext context;
-	private List<String> hostNames = null;
+	private SSLConnectionConfig config;
 	
 	private static final String ENGINE_ATTRIBUTE = "protocol.ssl.engine";
 	private static final String ENGINE_INPUT_BUFFER_ATTRIBUTE = "protocol.ssl.engine.inputBuffer";
@@ -93,10 +83,6 @@ public class SSLLayer {
 
 	private static final ByteBuffer emptyBuffer = ByteBuffer.allocate(0).asReadOnlyBuffer();
 	
-	public void setHostNames(List<String> hostNames) {
-		this.hostNames = hostNames;
-	}
-	
 	public Logger getLogger() {
 		return logger;
 	}
@@ -106,16 +92,7 @@ public class SSLLayer {
 	 */
 	public void startConnection(TCPConnection conn, boolean clientMode, int timeout) {
 		try {
-			SSLEngine engine = context.createSSLEngine();
-			if (hostNames != null && !hostNames.isEmpty()) {
-				SSLParameters params = new SSLParameters();
-				ArrayList<SNIServerName> list = new ArrayList<>(hostNames.size());
-				for (String name : hostNames)
-					list.add(new SNIHostName(name));
-				params.setServerNames(list);
-				engine.setSSLParameters(params);
-			}
-			engine.setUseClientMode(clientMode);
+			SSLEngine engine = config.createEngine(clientMode);
 			ByteBuffer inputBuffer = ByteBuffer.wrap(bufferCache.get(
 				Math.max(engine.getSession().getApplicationBufferSize(), engine.getSession().getPacketBufferSize()) << 1,
 				true));
@@ -163,19 +140,21 @@ public class SSLLayer {
 					conn.setAttribute(HANDSHAKE_FOLLOWUP_LOCK_ATTRIBUTE, lock);
 				}
 			}
+			boolean unlocked = false;
 			lock.lock();
 			try {
-				doFollowup();
+				unlocked = doFollowup(lock);
 			} finally {
-				lock.unlock();
+				if (!unlocked)
+					lock.unlock();
 			}
 			return null;
 		}
 		
-		private void doFollowup() {
+		private boolean doFollowup(LockPoint<NoException> lock) {
 			SSLEngine engine = (SSLEngine)conn.getAttribute(ENGINE_ATTRIBUTE);
 			ByteBuffer inputBuffer = (ByteBuffer)conn.getAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
-			if (inputBuffer == null) return;
+			if (inputBuffer == null) return false;
 			Object inputLock = conn.getAttribute(ENGINE_INPUT_LOCK);
 			do {
 				if (logger.debug())
@@ -183,22 +162,24 @@ public class SSLLayer {
 						+ engine.getHandshakeStatus().name() + ", current input buffer: "
 						+ inputBuffer.position() + " on " + conn);
 				if (conn.isClosed()) {
+					lock.unlock();
 					conn.closed();
 					bufferCache.free(inputBuffer);
 					conn.removeAttribute(ENGINE_INPUT_BUFFER_ATTRIBUTE);
-					return;
+					return true;
 				}
 				checkHandshakeTasks(engine);
 				switch (engine.getHandshakeStatus()) {
 				case NEED_TASK:
 					needTask();
-					return;
+					return false;
 				case NEED_WRAP:
+					lock.unlock();
 					needWrap();
-					return;
+					return true;
 				case NEED_UNWRAP:
-					if (needUnwrap(engine, inputBuffer, inputLock))
-						return;
+					if (needUnwrap(engine, inputBuffer, inputLock, lock))
+						return true;
 					break;
 	            case FINISHED:
 	            case NOT_HANDSHAKING:
@@ -206,19 +187,24 @@ public class SSLLayer {
 	            	synchronized (conn) {
 	            		// check we didn't already set it to avoid starting multiple times the next protocol
 	            		Boolean still = (Boolean)conn.getAttribute(HANDSHAKING_ATTRIBUTE);
-	            		if (!still.booleanValue()) return;
+	            		if (!still.booleanValue()) return false;
 	            		conn.setAttribute(HANDSHAKING_ATTRIBUTE, Boolean.FALSE);
 	            	}
 	            	conn.removeAttribute(HANDSHAKE_TASKS_ATTRIBUTE);
-	            	conn.handshakeDone();
+	            	lock.unlock();
+	            	String alpn = null;
+	            	if (SSLConnectionConfig.ALPN_SUPPORTED) {
+            			alpn = SSLConnectionConfig.getALPNProtocol(engine);
+	            	}
+	            	conn.handshakeDone(alpn);
 	            	// if we already have some data ready, let's send it to the connection
 	            	synchronized (inputLock) {
 	            		if (inputBuffer.position() > 0)
 	            			dataReceived(conn, engine, inputBuffer, timeout);
 	            	}
-	            	return;
+	            	return true;
 	            default:
-	            	return;
+	            	return false;
 				}
 			} while (true);
 		}
@@ -284,12 +270,13 @@ public class SSLLayer {
 			}
 		}
 		
-		private boolean needUnwrap(SSLEngine engine, ByteBuffer inputBuffer, Object inputLock) {
+		private boolean needUnwrap(SSLEngine engine, ByteBuffer inputBuffer, Object inputLock, LockPoint<NoException> lock) {
 			synchronized (inputLock) {
 				if (inputBuffer.position() == 0) {
 					if (logger.debug())
 						logger.debug(
 							"No data to unwrap, wait for more data from connection");
+					lock.unlock();
 					try { conn.waitForData(8192, timeout); }
 					catch (ClosedChannelException e) {
 						conn.closed();
@@ -306,6 +293,7 @@ public class SSLLayer {
 							logger.error("Cannot unwrap SSL data from connection "
 								+ conn, e);
 						bufferCache.free(dst);
+						lock.unlock();
 						conn.handshakeError(e);
 						conn.close();
 						return true;
@@ -316,6 +304,7 @@ public class SSLLayer {
 								"Cannot unwrap, wait for more data from connection");
 						bufferCache.free(dst);
 						inputBuffer.compact();
+						lock.unlock();
 						try { conn.waitForData(8192, timeout); }
 						catch (ClosedChannelException e) {
 							conn.closed();
