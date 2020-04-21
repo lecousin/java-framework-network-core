@@ -196,7 +196,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 		if (channel == null || !channel.isConnected()) return new AsyncSupplier<>(null, new ClosedChannelException());
 		if (networkClient.reading != null && !networkClient.reading.isDone())
 			return new AsyncSupplier<>(null, new IOException("TCPClient is already waiting for data"));
-		logger.debug("Register to NetworkManager for reading data");
+		logger.debug("Register to NetworkManager for receiving data");
 		networkClient.reading = new AsyncSupplier<>();
 		networkClient.expectedBytes = expectedBytes;
 		manager.register(channel, SelectionKey.OP_READ, networkClient, timeout);
@@ -542,7 +542,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 					}
 				}
 				if (logger.debug())
-					logger.debug("Sending up to " + p.getValue1().remaining() + " bytes to " + channel);
+					logger.debug(p.getValue1().remaining() + " bytes to send to " + channel);
 				if (p.getValue1().remaining() == 0) {
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
@@ -553,28 +553,33 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 						p.getValue2().unblock();
 					continue;
 				}
-				int nb;
-				try {
-					nb = channel.write(p.getValue1());
-				} catch (Exception e) {
-					// error while sending data, skip all data
-					if (logger.debug())
-						logger.debug("Data not sent to " + channel, e);
-					synchronized (toSend) {
-						while (!toSend.isEmpty()) {
-							Async<IOException> sp = toSend.removeFirst().getValue2();
-							if (sp != null) sp.error(IO.error(e));
+				int sent = 0;
+				do {
+					try {
+						int nb = channel.write(p.getValue1());
+						if (nb <= 0) {
+							// cannot write anymore
+							needsMore = true;
+							break;
 						}
+						sent += nb;
+					} catch (Exception e) {
+						// error while sending data, skip all data
+						if (logger.debug())
+							logger.debug("Data not sent to " + channel, e);
+						synchronized (toSend) {
+							while (!toSend.isEmpty()) {
+								Async<IOException> sp = toSend.removeFirst().getValue2();
+								if (sp != null) sp.error(IO.error(e));
+							}
+						}
+						break;
 					}
-					continue;
-				}
+				} while (p.getValue1().hasRemaining());
 				if (logger.debug())
-					logger.debug(nb + " bytes sent to " + channel);
-				if (nb == 0) {
-					// cannot write anymore
-					needsMore = true;
+					logger.debug(sent + " bytes sent to " + channel);
+				if (needsMore)
 					break;
-				}
 				if (!p.getValue1().hasRemaining()) {
 					synchronized (toSend) {
 						if (!toSend.isEmpty())
