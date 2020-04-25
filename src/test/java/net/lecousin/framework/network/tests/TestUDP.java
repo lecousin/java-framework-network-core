@@ -12,6 +12,7 @@ import net.lecousin.framework.collections.ArrayUtil;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.JoinPoint;
+import net.lecousin.framework.core.test.runners.LCSequentialRunner;
 import net.lecousin.framework.log.Logger.Level;
 import net.lecousin.framework.network.client.UDPClient;
 import net.lecousin.framework.network.server.UDPServer;
@@ -23,9 +24,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.junit.runners.BlockJUnit4ClassRunner;
 
-@RunWith(BlockJUnit4ClassRunner.class)
+@RunWith(LCSequentialRunner.class)
 public class TestUDP extends AbstractNetworkTest {
 
 	private UDPServer server;

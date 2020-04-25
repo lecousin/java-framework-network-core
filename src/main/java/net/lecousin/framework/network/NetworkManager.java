@@ -23,8 +23,10 @@ import net.lecousin.framework.application.Application;
 import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.async.AsyncSupplier;
+import net.lecousin.framework.concurrent.async.IAsync;
 import net.lecousin.framework.concurrent.threads.ApplicationThread;
 import net.lecousin.framework.concurrent.threads.Task;
+import net.lecousin.framework.concurrent.threads.Task.Priority;
 import net.lecousin.framework.io.IO;
 import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.network.security.IPBlackList;
@@ -175,9 +177,12 @@ public class NetworkManager implements Closeable {
 		private int timeout;
 		private AsyncSupplier<SelectionKey, IOException> result;
 		private Exception registerStack;
+		private Task.Context context;
 		
 		private String traceChannelOperations() {
-			return channel + " for operations " + newOps + " and timeout " + timeout;
+			StringBuilder s = new StringBuilder(256);
+			s.append(channel).append(" for operations ").append(newOps).append(" and timeout ").append(timeout);
+			return s.toString();
 		}
 	}
 	
@@ -187,22 +192,26 @@ public class NetworkManager implements Closeable {
 		private long connectStart;
 		private int onConnectTimeout;
 		private Exception connectStack;
+		private Task.Context connectContext;
 		private Receiver onRead;
 		private long readStart;
-		private Exception readStack;
 		private int onReadTimeout;
+		private Exception readStack;
+		private Task.Context readContext;
 		private Sender onWrite;
 		private long writeStart;
 		private int onWriteTimeout;
 		private Exception writeStack;
+		private Task.Context writeContext;
 		
-		public void set(int ops, Listener listener, int timeout, Exception stack) {
+		public void set(int ops, Listener listener, int timeout, Exception stack, Task.Context context) {
 			if ((ops & SelectionKey.OP_ACCEPT) != 0)
 				onAccept = (Server)listener;
 			if ((ops & SelectionKey.OP_CONNECT) != 0) {
 				onConnect = (Client)listener;
 				onConnectTimeout = timeout;
 				connectStack = stack;
+				connectContext = context;
 				if (timeout > 0)
 					connectStart = System.currentTimeMillis();
 			}
@@ -210,6 +219,7 @@ public class NetworkManager implements Closeable {
 				onRead = (Receiver)listener;
 				onReadTimeout = timeout;
 				readStack = stack;
+				readContext = context;
 				if (timeout > 0)
 					readStart = System.currentTimeMillis();
 			}
@@ -217,6 +227,7 @@ public class NetworkManager implements Closeable {
 				onWrite = (Sender)listener;
 				onWriteTimeout = timeout;
 				writeStack = stack;
+				writeContext = context;
 				if (timeout > 0)
 					writeStart = System.currentTimeMillis();
 			}
@@ -226,17 +237,23 @@ public class NetworkManager implements Closeable {
 			onAccept = null;
 			onConnect =  null;
 			onConnectTimeout = 0;
+			connectStack = null;
+			connectContext = null;
 			onRead = null;
 			onReadTimeout = 0;
+			readStack = null;
+			readContext = null;
 			onWrite = null;
 			onWriteTimeout = 0;
+			writeStack = null;
+			writeContext = null;
 		}
 		
 		public void channelClosed() {
-			if (onAccept != null) NetworkManager.channelClosed(onAccept);
-			if (onConnect != null) NetworkManager.channelClosed(onConnect);
-			if (onRead != null) NetworkManager.channelClosed(onRead);
-			if (onWrite != null) NetworkManager.channelClosed(onWrite);
+			if (onAccept != null) NetworkManager.channelClosed(onAccept, null);
+			if (onConnect != null) NetworkManager.channelClosed(onConnect, connectContext);
+			if (onRead != null) NetworkManager.channelClosed(onRead, readContext);
+			if (onWrite != null) NetworkManager.channelClosed(onWrite, writeContext);
 		}
 	}
 	
@@ -276,6 +293,7 @@ public class NetworkManager implements Closeable {
 		if (logger.trace())
 			logger.trace("Registering " + req.traceChannelOperations());
 		req.registerStack = new Exception("Request stack trace");
+		req.context = Task.getCurrentContext();
 		synchronized (requests) {
 			requests.addLast(req);
 		}
@@ -349,15 +367,16 @@ public class NetworkManager implements Closeable {
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
 							// a socket is connected
 							Client client = listeners.onConnect;
+							Task.Context context = listeners.connectContext;
 							try {
 								key.interestOps(0);
 								listeners.reset();
-								connected((SocketChannel)key.channel(), client);
+								connected((SocketChannel)key.channel(), client, context);
 							} catch (Exception e) {
 								if (logger.info())
 									logger.info("Connection failed: " + key.channel().toString());
 								key.cancel();
-								connectionFailed(client, e);
+								connectionFailed(client, context, e);
 								continue;
 							}
 						}
@@ -370,22 +389,28 @@ public class NetworkManager implements Closeable {
 								// ignore
 							}
 							Receiver receiver = listeners.onRead;
+							Task.Context context = listeners.readContext;
 							listeners.onRead = null;
 							listeners.onReadTimeout = 0;
-							dataReceived(key.channel(), receiver);
+							listeners.readStack = null;
+							listeners.readContext = null;
+							dataReceived(key.channel(), receiver, context);
 						}
 						if ((ops & SelectionKey.OP_WRITE) != 0) {
 							Sender sender = listeners.onWrite;
+							Task.Context context = listeners.writeContext;
 							try {
 								int iops = key.interestOps();
 								key.interestOps(iops - (iops & SelectionKey.OP_WRITE));
 								listeners.onWrite = null;
 								listeners.onWriteTimeout = 0;
+								listeners.writeStack = null;
+								listeners.writeContext = null;
 								if (trace)
 									logger.trace("Socket ready to send data on " + key.channel());
-								readyToSend(sender);
+								readyToSend(sender, context);
 							} catch (CancelledKeyException e) {
-								channelClosed(sender);
+								channelClosed(sender, context);
 							} catch (Exception t) {
 								if (logger.error())
 									logger.error("Error with channel ready to send", t);
@@ -451,7 +476,7 @@ public class NetworkManager implements Closeable {
 				} catch (ClosedChannelException e) {
 					if (logger.debug()) logger.debug("Channel closed while registering " + req.traceChannelOperations());
 					if (req.listener != null)
-						channelClosed(req.listener);
+						channelClosed(req.listener, req.context);
 					req.result.error(e);
 				}
 			} while (!stop);
@@ -462,10 +487,10 @@ public class NetworkManager implements Closeable {
 			SelectionKey key = req.channel.keyFor(selector);
 			if (key == null) {
 				Attachment listeners = new Attachment();
-				listeners.set(req.newOps, req.listener, req.timeout, req.registerStack);
+				listeners.set(req.newOps, req.listener, req.timeout, req.registerStack, req.context);
 				key = req.channel.register(selector, req.newOps, listeners);
 				if (logger.trace()) logger.trace("Registered: " + req.traceChannelOperations());
-				req.result.unblockSuccess(key);
+				unblock(req.result, key, req.context);
 				return;
 			}
 			Attachment listeners = (Attachment)key.attachment();
@@ -474,25 +499,25 @@ public class NetworkManager implements Closeable {
 				int conflict = curOps & req.newOps;
 				if (conflict == 0) {
 					key.interestOps(curOps | req.newOps);
-					listeners.set(req.newOps, req.listener, req.timeout, req.registerStack);
+					listeners.set(req.newOps, req.listener, req.timeout, req.registerStack, req.context);
 					if (logger.trace())
-						logger.trace("Registered: " + req.traceChannelOperations());
-					req.result.unblockSuccess(key);
+						logger.trace("Registration updated: " + req.traceChannelOperations());
+					unblock(req.result, key, req.context);
 					return;
 				}
 				IOException error = new IOException("Operation " + req.newOps + " already registered on " + req.channel,
 					req.registerStack);
 				if (logger.error()) logger.error("Operation already registered", error);
-				req.result.unblockError(error);
+				error(req.result, error, req.context);
 				try {
 					if ((conflict & SelectionKey.OP_ACCEPT) != 0)
 						acceptError((Server)req.listener,
 							new IOException("Already registered for accept operation"));
 					if ((conflict & SelectionKey.OP_CONNECT) != 0)
-						connectionFailed((Client)req.listener,
+						connectionFailed((Client)req.listener, req.context,
 							new IOException("Already registered for connect operation"));
 					if ((conflict & SelectionKey.OP_READ) != 0)
-						receiveError((Receiver)req.listener,
+						receiveError((Receiver)req.listener, req.context,
 							new IOException("Already registered for read operation"), null);
 					if ((conflict & SelectionKey.OP_WRITE) != 0)
 						logger.error("Already registered for write operation",
@@ -503,8 +528,22 @@ public class NetworkManager implements Closeable {
 			} catch (CancelledKeyException e) {
 				if (logger.debug()) logger.debug("Cancelled key while registering " + req.traceChannelOperations());
 				listeners.channelClosed();
-				req.result.error(IO.error(e));
+				error(req.result, IO.error(e), req.context);
 			}
+		}
+		
+		private <T> void unblock(AsyncSupplier<T, ?> async, T result, Task.Context context) {
+			Task.cpu("Network result", Priority.RATHER_IMPORTANT, context, t -> {
+				async.unblockSuccess(result);
+				return null;
+			}).start();
+		}
+		
+		private <T extends Exception> void error(IAsync<T> async, T error, Task.Context context) {
+			Task.cpu("Network result", Priority.NORMAL, context, t -> {
+				async.error(error);
+				return null;
+			}).start();
 		}
 		
 		@SuppressWarnings("squid:S3776") // complexity
@@ -516,7 +555,7 @@ public class NetworkManager implements Closeable {
 				Attachment listeners = (Attachment)key.attachment();
 				if (listeners.onConnect != null && listeners.onConnectTimeout > 0) {
 					if (now > listeners.connectStart + listeners.onConnectTimeout) {
-						connectionFailed(listeners.onConnect,
+						connectionFailed(listeners.onConnect, listeners.connectContext,
 							timeout(key, "Connection", listeners.onConnectTimeout, listeners.connectStack));
 						key.cancel();
 						continue;
@@ -526,7 +565,7 @@ public class NetworkManager implements Closeable {
 				}
 				if (listeners.onRead != null && listeners.onReadTimeout > 0) {
 					if (now > listeners.readStart + listeners.onReadTimeout) {
-						receiveError(listeners.onRead,
+						receiveError(listeners.onRead, listeners.readContext,
 							timeout(key, "Receive", listeners.onReadTimeout, listeners.readStack), null);
 						resetAndClose(key);
 						continue;
@@ -544,7 +583,9 @@ public class NetworkManager implements Closeable {
 						listeners.onWriteTimeout = 0;
 						Exception stack = listeners.writeStack;
 						listeners.writeStack = null;
-						sendTimeout(sender, timeout(key, "Send", to, stack));
+						Task.Context context = listeners.writeContext;
+						listeners.writeContext = null;
+						sendTimeout(sender, context, timeout(key, "Send", to, stack));
 						continue;
 					}
 					if (listeners.writeStart + listeners.onWriteTimeout < nextTimeout)
@@ -560,9 +601,11 @@ public class NetworkManager implements Closeable {
 			StringBuilder err = new StringBuilder(1024);
 			err.append(type).append(" timeout after ").append(timeout).append("ms.");
 			err.append(" on ").append(key.channel());
-			err.append(" [state ").append(key.readyOps()).append("/").append(key.interestOps()).append("]\n");
-			if (stack != null)
+			err.append(" [ready ").append(key.readyOps()).append("/").append(key.interestOps()).append("]\n");
+			if (stack != null) {
 				DebugUtil.createStackTrace(err, stack, false);
+				err.append('\n');
+			}
 			return new IOException(err.toString());
 		}
 		
@@ -604,8 +647,8 @@ public class NetworkManager implements Closeable {
 			}).start();
 		}
 		
-		private void connected(SocketChannel channel, Client client) {
-			Task.cpu("Finish connection", Task.Priority.NORMAL, t -> {
+		private void connected(SocketChannel channel, Client client, Task.Context context) {
+			Task.cpu("Finish connection", Task.Priority.NORMAL, context, t -> {
 				if (logger.trace())
 					logger.trace("A socket is ready to be connected: " + channel);
 				try {
@@ -621,8 +664,8 @@ public class NetworkManager implements Closeable {
 			}).start();
 		}
 		
-		private void connectionFailed(Client client, Throwable error) {
-			Task.cpu("Call Client.connectionFailed", Task.Priority.RATHER_LOW, t -> {
+		private void connectionFailed(Client client, Task.Context context, Throwable error) {
+			Task.cpu("Call Client.connectionFailed", Task.Priority.RATHER_LOW, context, t -> {
 				client.connectionFailed(IO.error(error));
 				return null;
 			}).start();
@@ -632,8 +675,8 @@ public class NetworkManager implements Closeable {
 			"java:S3776", // complexity
 			"squid:S1193" // instanceof IOException
 		}) 
-		private void dataReceived(SelectableChannel channel, Receiver receiver) {
-			Task.cpu("Data received from network", Task.Priority.NORMAL, t -> {
+		private void dataReceived(SelectableChannel channel, Receiver receiver, Task.Context context) {
+			Task.cpu("Data received from network", Task.Priority.NORMAL, context, t -> {
 				ByteBuffer buffer = null;
 				try {
 					buffer = receiver.allocateReceiveBuffer();
@@ -676,28 +719,28 @@ public class NetworkManager implements Closeable {
 					} catch (Exception e2) {
 						// ignore
 					}
-					channelClosed(receiver);
+					channelClosed(receiver, context);
 				}
 				return null;
 			}).start();
 		}
 		
-		private void receiveError(Receiver client, Throwable error, ByteBuffer buffer) {
-			Task.cpu("Call Receiver.receiveError", Task.Priority.RATHER_LOW, t -> {
+		private void receiveError(Receiver client, Task.Context context, Throwable error, ByteBuffer buffer) {
+			Task.cpu("Call Receiver.receiveError", Task.Priority.RATHER_LOW, context, t -> {
 				client.receiveError(IO.error(error), buffer);
 				return null;
 			}).start();
 		}
 
-		private void readyToSend(Sender sender) {
-			Task.cpu("Call Sender.readyToSend", Task.Priority.NORMAL, t -> {
+		private void readyToSend(Sender sender, Task.Context context) {
+			Task.cpu("Call Sender.readyToSend", Task.Priority.NORMAL, context, t -> {
 				sender.readyToSend();
 				return null;
 			}).start();
 		}
 		
-		private void sendTimeout(Sender sender, IOException err) {
-			Task.cpu("Call Sender.sendTimeout", Task.Priority.RATHER_LOW, t -> {
+		private void sendTimeout(Sender sender, Task.Context context, IOException err) {
+			Task.cpu("Call Sender.sendTimeout", Task.Priority.RATHER_LOW, context, t -> {
 				sender.sendTimeout(err);
 				return null;
 			}).start();
@@ -705,8 +748,8 @@ public class NetworkManager implements Closeable {
 
 	}
 	
-	private static void channelClosed(Listener listener) {
-		Task.cpu("Call Listener.channelClosed", Task.Priority.RATHER_LOW, t -> {
+	private static void channelClosed(Listener listener, Task.Context context) {
+		Task.cpu("Call Listener.channelClosed", Task.Priority.RATHER_LOW, context, t -> {
 			if (listener != null)
 				listener.channelClosed();
 			return null;

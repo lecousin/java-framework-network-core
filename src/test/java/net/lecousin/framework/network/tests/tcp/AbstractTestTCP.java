@@ -15,6 +15,7 @@ import javax.net.SocketFactory;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
 import net.lecousin.framework.concurrent.async.IAsync;
+import net.lecousin.framework.core.test.runners.LCSequentialRunner;
 import net.lecousin.framework.io.buffering.ByteArrayIO;
 import net.lecousin.framework.network.NetUtil;
 import net.lecousin.framework.network.SocketOptionValue;
@@ -31,10 +32,9 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
-@RunWith(Parameterized.class)
+@RunWith(LCSequentialRunner.Parameterized.class) @org.junit.runners.Parameterized.UseParametersRunnerFactory(LCSequentialRunner.SequentialParameterizedRunnedFactory.class)
 public abstract class AbstractTestTCP extends AbstractNetworkTest {
 
 	@Parameters(name = "SSL = {0}, IPv6 = {1}")

@@ -164,6 +164,8 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 			logger.debug("Connecting to " + address.toString());
 		if (spConnect != null)
 			return new Async<>(new IOException("Client already connecting"));
+		if (channel != null && channel.isConnected())
+			return new Async<>(new IOException("Client already connected"));
 		spConnect = new Async<>();
 		Async<IOException> result = spConnect;
 		try {
