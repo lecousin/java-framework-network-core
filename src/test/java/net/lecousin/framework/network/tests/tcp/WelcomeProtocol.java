@@ -73,7 +73,7 @@ public class WelcomeProtocol implements ALPNServerProtocol {
 					@SuppressWarnings("unchecked")
 					IAsync<IOException>[] sent = new IAsync[1000];
 					for (int i = 0; i < 1000; ++i) {
-						if (i > 100 && (i % 250) == 0) sent[i - 50].block(5000);
+						if (i > 200 && (i % 50) == 0) sent[i - 150].block(10000);
 						byte[] buf = new byte[1024 * 1024];
 						DataUtil.Write32.LE.write(buf, i, i);
 						IAsync<IOException> send = client.send(ByteBuffer.wrap(buf), 5000);
