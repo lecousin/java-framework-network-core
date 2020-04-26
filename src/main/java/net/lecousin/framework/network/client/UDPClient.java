@@ -12,6 +12,8 @@ import net.lecousin.framework.application.LCCore;
 import net.lecousin.framework.collections.TurnArray;
 import net.lecousin.framework.concurrent.CancelException;
 import net.lecousin.framework.concurrent.async.Async;
+import net.lecousin.framework.log.Logger;
+import net.lecousin.framework.log.LoggerFactory;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.util.DebugUtil;
 import net.lecousin.framework.util.Pair;
@@ -25,10 +27,12 @@ public class UDPClient implements Closeable {
 	public UDPClient(SocketAddress target) {
 		this.target = target;
 		manager = NetworkManager.get();
+		logger = LoggerFactory.get(UDPClient.class);
 	}
 	
 	private final NetworkManager manager;
 	private final SocketAddress target;
+	private final Logger logger;
 	private DatagramChannel channel;
 	private TurnArray<Pair<ByteBuffer, Async<IOException>>> toSend = new TurnArray<>();
 	
@@ -58,9 +62,11 @@ public class UDPClient implements Closeable {
 					ByteBuffer data = bufToSend.getValue1();
 					if (data.hasArray() && manager.getDataLogger().trace()) {
 						StringBuilder s = new StringBuilder(data.remaining() * 4);
-						s.append("UDPClient: send data to").append(target).append(":\r\n");
+						s.append("UDPClient: send data to ").append(target).append(":\r\n");
 						DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
 						manager.traceData(s);
+					} else if (logger.debug()) {
+						logger.debug("UDPClient: send " + data.remaining() + " bytes to " + target);
 					}
 					synchronized (UDPClient.this) {
 						if (channel == null) throw new ClosedChannelException();
@@ -197,6 +203,8 @@ public class UDPClient implements Closeable {
 		
 		@Override
 		public void received(ByteBuffer buffer, SocketAddress source) {
+			if (logger.debug() && buffer != null)
+				logger.debug("UDPClient: " + buffer.remaining() + " bytes received from " + source);
 			AnswerListener l;
 			synchronized (UDPClient.this) {
 				l = listener;

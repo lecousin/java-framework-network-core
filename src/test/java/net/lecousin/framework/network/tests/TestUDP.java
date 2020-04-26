@@ -80,7 +80,7 @@ public class TestUDP extends AbstractNetworkTest {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
-			byte[] buf = new byte[32768];
+			byte[] buf = new byte[8192];
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
 			UDPClient client = new UDPClient(serverAddress);
@@ -102,7 +102,7 @@ public class TestUDP extends AbstractNetworkTest {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
-			byte[] buf = new byte[32768];
+			byte[] buf = new byte[8192];
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
 			UDPClient client = new UDPClient(serverAddress);
