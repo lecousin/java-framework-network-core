@@ -10,6 +10,7 @@ import net.lecousin.framework.network.SocketOptionValue;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.TCPServerClient;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
+import net.lecousin.framework.network.ssl.SSLLayer;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -55,6 +56,7 @@ public class TestTCPEchoProtocol extends AbstractTestTCP {
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.DEBUG);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.DEBUG);
+		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.DEBUG);
 		TCPClient client = connectClient(new SocketOptionValue<>(StandardSocketOptions.SO_SNDBUF, Integer.valueOf(512)));
 		byte[] data = new byte[100000];
 		for (int i = 0; i < data.length; ++i)
@@ -64,6 +66,7 @@ public class TestTCPEchoProtocol extends AbstractTestTCP {
 		for (int i = 0; i < 10; ++i)
 			Assert.assertArrayEquals("Array " + i, data, client.getReceiver().readBytes(data.length, 10000).blockResult(0));
 		client.close();
+		LCCore.getApplication().getLoggerFactory().getLogger(SSLLayer.class).setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger(TCPClient.class).setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 		LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
