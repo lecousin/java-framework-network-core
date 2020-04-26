@@ -70,7 +70,11 @@ public class TestTCPWelcomeProtocol extends AbstractTestTCP {
 		clients.get(0).toString();
 		
 		s.close();
-		try { Thread.sleep(1000); } catch (InterruptedException e) {}
+		while (!s.isClosed())
+			try { Thread.sleep(25); } catch (InterruptedException e) {}
+		int count = 0;
+		while (server.getConnectedClients().size() > 0 && ++count < 200)
+			try { Thread.sleep(25); } catch (InterruptedException e) {}
 		Assert.assertEquals(0, server.getConnectedClients().size());
 	}
 

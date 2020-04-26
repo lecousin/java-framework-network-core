@@ -158,10 +158,10 @@ public class SSLServerProtocol implements ServerProtocol {
 		
 		@Override
 		public void dataReceived(LinkedList<ByteBuffer> data) {
-			if (data.isEmpty())
-				return;
 			ByteBuffer buf;
-			if (data.size() == 1)
+			if (data.isEmpty())
+				buf = ByteBuffer.allocate(0);
+			else if (data.size() == 1)
 				buf = data.getFirst();
 			else {
 				// we need to concatenate it
