@@ -44,6 +44,11 @@ public class TestUDP extends AbstractNetworkTest {
 				if (!pauseServer)
 					reply.reply(r);
 			}
+			
+			@Override
+			public String getProtocolDescription() {
+				return "Test UDP protocol";
+			}
 		});
 		serverAddress = server.bind(new InetSocketAddress("localhost", 0)).blockResult(0);
 	}

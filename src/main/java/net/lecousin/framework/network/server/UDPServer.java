@@ -27,8 +27,16 @@ public class UDPServer extends AbstractServer<DatagramChannel, UDPServer.Channel
 	protected int receiveBufferSize;
 	protected MessageListener messageListener;
 	
+	@Override
+	public String getProtocolDescription() {
+		return messageListener.getProtocolDescription();
+	}
+	
 	/** Interface to implement to handle received messages. */
 	public static interface MessageListener {
+		/** Return a description of the protocol. */
+		String getProtocolDescription();
+		
 		/** Called each time a new datagram is received on the server. */
 		void newMessage(ByteBuffer message, SocketAddress source, MessageSender reply);
 	}

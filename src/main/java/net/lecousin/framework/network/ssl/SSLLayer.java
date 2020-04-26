@@ -22,6 +22,7 @@ import net.lecousin.framework.log.Logger;
 import net.lecousin.framework.memory.ByteArrayCache;
 import net.lecousin.framework.mutable.MutableBoolean;
 import net.lecousin.framework.util.AttributesContainer;
+import net.lecousin.framework.util.DebugUtil;
 
 /**
  * SSL implementation.
@@ -195,6 +196,8 @@ public class SSLLayer {
 	            	String alpn = null;
 	            	if (SSLConnectionConfig.ALPN_SUPPORTED) {
             			alpn = SSLConnectionConfig.getALPNProtocol(engine);
+            			if (alpn != null && alpn.isEmpty())
+            				alpn = null;
 	            	}
 	            	conn.handshakeDone(alpn);
 	            	// if we already have some data ready, let's send it to the connection
@@ -425,11 +428,19 @@ public class SSLLayer {
 				continue;
 			}
 			// data ready
-			dst.flip();
 			if (logger.debug())
-				logger.debug(dst.remaining() + " bytes decrypted from SSL connection " + conn);
-			buffers.add(dst);
-			dst = null;
+				logger.debug(dst.position() + " bytes decrypted from SSL connection " + conn);
+			if (dst.position() > 0) {
+				dst.flip();
+				if (logger.trace()) {
+					StringBuilder s = new StringBuilder(((dst.remaining() / 16) + 1) * 85 + 128);
+					s.append("Decrypted data received:\n");
+					DebugUtil.dumpHex(s, dst);
+					logger.trace(s.toString());
+				}
+				buffers.add(dst);
+				dst = null;
+			}
 		}
 		conn.dataReceived(buffers);
 		compactInputBuffer(inputBuffer, packetSize, conn);
@@ -464,6 +475,13 @@ public class SSLLayer {
 			totalToEncrypt += toEncrypt.remaining();
 		if (logger.debug())
 			logger.debug("Encrypting " + totalToEncrypt + " bytes for SSL connection " + conn);
+		if (logger.trace()) {
+			StringBuilder s = new StringBuilder(((totalToEncrypt / 16) + 1) * 85 + 1024);
+			s.append("Data to encrypt:\n");
+			for (ByteBuffer toEncrypt : data)
+				DebugUtil.dumpHex(s, toEncrypt);
+			logger.trace(s.toString());
+		}
 		Iterator<ByteBuffer> itData = data.iterator();
 		LinkedList<ByteBuffer> buffers = new LinkedList<>();
 		ByteBuffer dst = null;

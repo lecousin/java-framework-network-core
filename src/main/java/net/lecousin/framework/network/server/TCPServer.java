@@ -50,6 +50,11 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 	}
 	
 	@Override
+	public String getProtocolDescription() {
+		return protocol.toString();
+	}
+	
+	@Override
 	public void unbindAll() {
 		super.unbindAll();
 		ArrayList<Client> list;
@@ -242,8 +247,7 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		
 		@Override
 		public void receiveError(IOException error, ByteBuffer buffer) {
-			if (buffer != null && buffer.hasArray())
-				bufferCache.free(buffer.array());
+			// nothing
 		}
 		
 		Async<IOException> send(List<ByteBuffer> buf, int timeout, boolean closeAfter) throws ClosedChannelException {

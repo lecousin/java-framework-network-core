@@ -104,6 +104,7 @@ public class NetworkSecurity {
 		NetworkSecurityFeature instance = plugin.newInstance(app, cfg);
 		instances.put(instance.getClass().getName(), instance);
 		plugins.put(plugin, instance);
+		logger.info("Security feature added: " + instance + " from plug-in " + plugin + " for application " + app.getFullName());
 		if (cfg != null)
 			instance.clean();
 		return instance;

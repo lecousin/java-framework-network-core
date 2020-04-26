@@ -58,6 +58,26 @@ public class SSLServerProtocol implements ServerProtocol {
 	private ServerProtocol protocol;
 	private Map<String, ALPNServerProtocol> protocols;
 	
+	@Override
+	public String toString() {
+		StringBuilder s = new StringBuilder();
+		s.append("SSL: ");
+		s.append(protocol.toString());
+		if (protocols != null) {
+			s.append(" (with ALPN protocols ");
+			boolean first = true;
+			for (String alpn : protocols.keySet()) {
+				if (first)
+					first = false;
+				else
+					s.append(", ");
+				s.append(alpn);
+			}
+			s.append(')');
+		}
+		return s.toString();
+	}
+	
 	public ServerProtocol getInnerProtocol() {
 		return protocol;
 	}
@@ -111,8 +131,14 @@ public class SSLServerProtocol implements ServerProtocol {
 		public void handshakeDone(String alpn) {
 			if (alpn == null || protocols == null)
 				selectedProtocol = protocol;
-			else
+			else {
 				selectedProtocol = protocols.get(alpn);
+				if (selectedProtocol == null) {
+					ssl.getLogger().warn("Client selected protocol " + alpn + " which is not supported by our server");
+					client.close();
+					return;
+				}
+			}
 			// start the next protocol
 			int recvTimeout = selectedProtocol.startProtocol(client);
 			if (recvTimeout >= 0)

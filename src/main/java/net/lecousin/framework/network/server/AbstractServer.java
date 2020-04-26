@@ -35,6 +35,8 @@ implements Closeable {
 	protected Application app;
 	protected NetworkManager manager;
 	protected ArrayList<TServerChannel> channels = new ArrayList<>();
+	
+	public abstract String getProtocolDescription();
 
 	@Override
 	public void close() {
@@ -78,7 +80,7 @@ implements Closeable {
 			try {
 				SocketAddress addr = channel.getLocalAddress();
 				if (manager.getLogger().info())
-					manager.getLogger().info("New server listening at " + addr.toString());
+					manager.getLogger().info("New server listening at " + addr.toString() + ": " + getProtocolDescription());
 				result.unblockSuccess(addr);
 			} catch (IOException e) {
 				result.error(e);

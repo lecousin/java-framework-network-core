@@ -100,7 +100,6 @@ public class SSLClient extends TCPClient {
 		@SuppressWarnings("unchecked")
 		@Override
 		public void dataReceived(LinkedList<ByteBuffer> data) {
-			if (data.isEmpty()) return;
 			AsyncSupplier<ByteBuffer, IOException> waiting;
 			ByteBuffer buffer;
 			Triple<AsyncSupplier<ByteBuffer, IOException>, Integer, Integer> waitAgain = null;
@@ -112,18 +111,25 @@ public class SSLClient extends TCPClient {
 					receivedData.addAll(data);
 					return;
 				}
-				waiting = list.removeFirst().getValue1();
-				if (list.isEmpty())
-					removeAttribute(WAITING_DATA_ATTRIBUTE);
-				else
+				if (data.isEmpty()) {
 					waitAgain = list.getFirst();
-				buffer = data.removeFirst();
-				if (!data.isEmpty())
-					receivedData.addAll(data);
+					waiting = null;
+					buffer = null;
+				} else {
+					waiting = list.removeFirst().getValue1();
+					if (list.isEmpty())
+						removeAttribute(WAITING_DATA_ATTRIBUTE);
+					else
+						waitAgain = list.getFirst();
+					buffer = data.removeFirst();
+					if (!data.isEmpty())
+						receivedData.addAll(data);
+				}
 			}
 			if (waitAgain != null)
 				waitForSSLData(waitAgain.getValue2().intValue(), waitAgain.getValue3().intValue());
-			waiting.unblockSuccess(buffer);
+			if (waiting != null)
+				waiting.unblockSuccess(buffer);
 		}
 		
 		@Override
