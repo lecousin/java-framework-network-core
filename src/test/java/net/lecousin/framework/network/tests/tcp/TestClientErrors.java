@@ -8,6 +8,8 @@ import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
 import net.lecousin.framework.network.server.protocol.ServerProtocol;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class TestClientErrors extends AbstractTestTCP {
@@ -19,6 +21,16 @@ public class TestClientErrors extends AbstractTestTCP {
 	@Override
 	protected ServerProtocol createProtocol() {
 		return new WelcomeProtocol();
+	}
+	
+	@Before
+	public void deactivateTraces() {
+		deactivateNetworkTraces();
+	}
+	
+	@After
+	public void reactivateTraces() {
+		activateNetworkTraces();
 	}
 	
 	@Test

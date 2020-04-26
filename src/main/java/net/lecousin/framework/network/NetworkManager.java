@@ -336,9 +336,9 @@ public class NetworkManager implements Closeable {
 				if (stop) break;
 				Set<SelectionKey> keys = selector.selectedKeys();
 				status = "Processing ready channels: " + keys.size();
+				boolean trace = logger.trace();
+				if (trace) logger.trace(keys.size() + " network channels are ready for operations");
 				if (!keys.isEmpty()) {
-					boolean trace = logger.trace();
-					if (trace) logger.trace(keys.size() + " network channels are ready for operations");
 					loopCount++;
 					for (Iterator<SelectionKey> it = keys.iterator(); it.hasNext(); ) {
 						SelectionKey key = it.next();
@@ -429,7 +429,7 @@ public class NetworkManager implements Closeable {
 				synchronized (requests) {
 					if (!requests.isEmpty()) continue;
 				}
-				if (logger.trace()) logger.trace("NetworkManager is waiting for operations");
+				if (trace) logger.trace("NetworkManager is waiting for operations");
 				long now = System.nanoTime();
 				workingTime += now - start;
 				status = "Waiting";
@@ -437,6 +437,7 @@ public class NetworkManager implements Closeable {
 					if (nextTimeout > 0) {
 						long ms = nextTimeout - System.currentTimeMillis();
 						if (ms <= 0) ms = 1;
+						if (trace) logger.trace("Wait up to " + ms + "ms.");
 						selector.select(ms);
 					} else {
 						selector.select(60000);
