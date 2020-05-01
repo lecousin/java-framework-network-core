@@ -1,6 +1,7 @@
 package net.lecousin.framework.network.client;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -60,13 +61,15 @@ public class UDPClient implements Closeable {
 				int nb;
 				try {
 					ByteBuffer data = bufToSend.getValue1();
+					if (!data.hasRemaining())
+						throw new EOFException("Empty buffer!");
 					if (data.hasArray() && manager.getDataLogger().trace()) {
 						StringBuilder s = new StringBuilder(data.remaining() * 4);
 						s.append("UDPClient: send data to ").append(target).append(":\r\n");
 						DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
 						manager.traceData(s);
 					} else if (logger.debug()) {
-						logger.debug("UDPClient: send " + data.remaining() + " bytes to " + target);
+						logger.debug("Sending " + data.remaining() + " bytes to " + target);
 					}
 					synchronized (UDPClient.this) {
 						if (channel == null) throw new ClosedChannelException();
@@ -74,12 +77,16 @@ public class UDPClient implements Closeable {
 					}
 				} catch (IOException e) {
 					// error while sending data, just skip it
+					if (logger.error())
+						logger.error("Error sending UDP data, skip it", e);
 					synchronized (toSend) {
 						if (!toSend.isEmpty()) toSend.removeFirst();
 					}
 					if (bufToSend.getValue2() != null) bufToSend.getValue2().error(e);
 					continue;
 				}
+				if (logger.debug())
+					logger.debug("" + nb + " bytes sent to " + target);
 				if (nb == 0) {
 					// cannot write anymore
 					needsMore = true;
@@ -94,6 +101,7 @@ public class UDPClient implements Closeable {
 						bufToSend.getValue2().unblock();
 				}
 			}
+
 			if (!needsMore) {
 				// no more data to send
 				return;
@@ -133,7 +141,7 @@ public class UDPClient implements Closeable {
 	 * @param onSent unblocked when the data has been fully sent or an error occured. Can be null.
 	 */
 	public void send(ByteBuffer data, Async<IOException> onSent) {
-		if (data.remaining() == 0) {
+		if (!data.hasRemaining()) {
 			if (onSent != null) onSent.unblock();
 			return;
 		}
@@ -143,7 +151,7 @@ public class UDPClient implements Closeable {
 			return;
 		}
 		synchronized (toSend) {
-			toSend.push(new Pair<>(data, onSent));
+			toSend.addLast(new Pair<>(data, onSent));
 			if (toSend.size() == 1)
 				manager.register(channel, SelectionKey.OP_WRITE, sender, 0);
 		}

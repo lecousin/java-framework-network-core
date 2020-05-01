@@ -9,6 +9,7 @@ import net.lecousin.framework.log.LoggerFactory;
 import net.lecousin.framework.network.NetworkManager;
 import net.lecousin.framework.network.client.SSLClient;
 import net.lecousin.framework.network.client.TCPClient;
+import net.lecousin.framework.network.client.UDPClient;
 import net.lecousin.framework.network.ssl.SSLContextConfig;
 import net.lecousin.framework.network.ssl.SSLLayer;
 
@@ -37,6 +38,7 @@ public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 		log.getLogger(TCPClient.class).setLevel(Level.TRACE);
 		log.getLogger(SSLClient.class).setLevel(Level.TRACE);
 		log.getLogger(SSLLayer.class).setLevel(Level.TRACE);
+		log.getLogger(UDPClient.class).setLevel(Level.TRACE);
 		NetworkManager manager = NetworkManager.get();
 		manager.getLogger().setLevel(Level.TRACE);
 		manager.getDataLogger().setLevel(Level.TRACE);
@@ -48,6 +50,7 @@ public abstract class AbstractNetworkTest extends LCCoreAbstractTest {
 		log.getLogger(TCPClient.class).setLevel(Level.INFO);
 		log.getLogger(SSLClient.class).setLevel(Level.INFO);
 		log.getLogger(SSLLayer.class).setLevel(Level.INFO);
+		log.getLogger(UDPClient.class).setLevel(Level.INFO);
 		NetworkManager manager = NetworkManager.get();
 		manager.getLogger().setLevel(Level.INFO);
 		manager.getDataLogger().setLevel(Level.INFO);

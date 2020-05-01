@@ -80,6 +80,7 @@ public class TestUDP extends AbstractNetworkTest {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger(UDPClient.class).setLevel(Level.INFO);
 			byte[] buf = new byte[8192];
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
@@ -89,9 +90,11 @@ public class TestUDP extends AbstractNetworkTest {
 			Async<IOException> last = new Async<>();
 			for (int i = 0; i < 1000; ++i)
 				client.send(ByteBuffer.wrap(buf), i == 999 ? last : null);
-			last.blockThrow(15000);
+			last.blockThrow(30000);
+			Assert.assertTrue(last.isSuccessful());
 			client.close();
 		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger(UDPClient.class).setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 		}
@@ -102,6 +105,8 @@ public class TestUDP extends AbstractNetworkTest {
 		try {
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.INFO);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.INFO);
+			LCCore.getApplication().getLoggerFactory().getLogger(UDPClient.class).setLevel(Level.INFO);
+
 			byte[] buf = new byte[8192];
 			for (int i = 0; i < buf.length; ++i)
 				buf[i] = (byte)i;
@@ -116,6 +121,7 @@ public class TestUDP extends AbstractNetworkTest {
 				Assert.assertTrue((e instanceof CancelException) || (e instanceof ClosedChannelException));
 			}
 		} finally {
+			LCCore.getApplication().getLoggerFactory().getLogger(UDPClient.class).setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network-data").setLevel(Level.TRACE);
 			LCCore.getApplication().getLoggerFactory().getLogger("network").setLevel(Level.TRACE);
 		}
