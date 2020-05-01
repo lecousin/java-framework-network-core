@@ -12,7 +12,8 @@ jobs:
       dist: bionic
       jdk: openjdk8
       install:
-        - sudo apt-get install openjdk-8-jdk -V
+        - sudo apt-get -y update && sudo apt-get -y install openjdk-8-jdk
+        - java -version
     - os: osx
       osx_image: xcode9.3
 
