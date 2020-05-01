@@ -681,6 +681,10 @@ public class NetworkManager implements Closeable {
 				ByteBuffer buffer = null;
 				try {
 					buffer = receiver.allocateReceiveBuffer();
+					if (!channel.isOpen()) {
+						channelClosed(receiver, context);
+						return null;
+					}
 					if (receiver instanceof TCPReceiver) {
 						TCPReceiver tcp = (TCPReceiver)receiver;
 						int nb = ((ReadableByteChannel)channel).read(buffer);

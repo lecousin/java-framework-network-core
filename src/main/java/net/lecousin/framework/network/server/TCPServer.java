@@ -228,6 +228,8 @@ public class TCPServer extends AbstractServer<ServerSocketChannel, TCPServer.Ser
 		
 		@Override
 		public ByteBuffer allocateReceiveBuffer() {
+			if (publicInterface == null)
+				return null;
 			return ByteBuffer.wrap(bufferCache.get(protocol.getInputBufferSize(publicInterface), true));
 		}
 		
