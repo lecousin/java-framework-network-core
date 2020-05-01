@@ -54,7 +54,7 @@ public class SSLConnectionConfig {
 		ALPN_SUPPORTED = methodGet != null && methodSet != null;
 		ALPN_METHOD_GET = methodGet;
 		ALPN_METHOD_SET = methodSet;
-		NetworkManager.get().getLogger().info("ALPN support: " + ALPN_SUPPORTED);
+		System.out.println("ALPN support: " + ALPN_SUPPORTED);
 	}
 	
 	private SSLContext context = null;

@@ -42,7 +42,8 @@ public class SSLLayer {
 		void close();
 		
 		/** Called once the SSL handshake has been successfully done.
-		 * @param alpn if protocol negotiation occurred during handshake, the negotiated protocol is given, else null is given
+		 * @param alpn if protocol negotiation occurred during handshake,
+		 *     the negotiated protocol is given (empty string is none is matching), else null is given
 		 */
 		void handshakeDone(String alpn);
 		
@@ -196,8 +197,6 @@ public class SSLLayer {
 	            	String alpn = null;
 	            	if (SSLConnectionConfig.ALPN_SUPPORTED) {
             			alpn = SSLConnectionConfig.getALPNProtocol(engine);
-            			if (alpn != null && alpn.isEmpty())
-            				alpn = null;
 	            	}
 	            	conn.handshakeDone(alpn);
 	            	// if we already have some data ready, let's send it to the connection

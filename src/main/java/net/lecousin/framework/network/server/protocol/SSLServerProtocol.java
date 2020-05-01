@@ -50,8 +50,8 @@ public class SSLServerProtocol implements ServerProtocol {
 	}
 
 	/** Constructor. */
-	public SSLServerProtocol(ServerProtocol protocol) throws GeneralSecurityException {
-		this(SSLContext.getDefault(), protocol);
+	public SSLServerProtocol(ServerProtocol protocol, ALPNServerProtocol... alpnProtocols) throws GeneralSecurityException {
+		this(SSLContext.getDefault(), protocol, alpnProtocols);
 	}
 
 	private SSLLayer ssl;
@@ -129,16 +129,10 @@ public class SSLServerProtocol implements ServerProtocol {
 		
 		@Override
 		public void handshakeDone(String alpn) {
-			if (alpn == null || protocols == null)
+			if (alpn == null || protocols == null || alpn.isEmpty())
 				selectedProtocol = protocol;
-			else {
+			else
 				selectedProtocol = protocols.get(alpn);
-				if (selectedProtocol == null) {
-					ssl.getLogger().warn("Client selected protocol " + alpn + " which is not supported by our server");
-					client.close();
-					return;
-				}
-			}
 			// start the next protocol
 			int recvTimeout = selectedProtocol.startProtocol(client);
 			if (recvTimeout >= 0)
