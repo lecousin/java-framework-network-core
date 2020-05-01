@@ -17,7 +17,7 @@ jobs:
         - sudo apt-get -y remove default-jdk default-jre default-jdk-headless default-jre-headless ca-certificates-java openjdk-8-jdk openjdk-8-jdk-headless openjdk-8-jre openjdk-8-jre-headless
         - sudo rm -rf /usr/local/lib/jvm
         - sudo apt-get -y update && sudo apt-get -y install openjdk-8-jdk java-common
-        - /usr/lib/jvm/java-8-openjdk-amd64/java -version
+        - /usr/lib/jvm/java-8-openjdk-amd64/bin/java -version
     - os: osx
       osx_image: xcode9.3
 
