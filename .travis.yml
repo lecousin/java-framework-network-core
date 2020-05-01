@@ -11,6 +11,9 @@ jobs:
     - os: linux
       dist: bionic
       jdk: openjdk8
+    - os: linux
+      dist: bionic
+      jdk: openjdk8
       env:
         - JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
       install:
