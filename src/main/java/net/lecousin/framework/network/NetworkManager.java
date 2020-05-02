@@ -188,6 +188,7 @@ public class NetworkManager implements Closeable {
 	
 	private static class Attachment {
 		private Server onAccept;
+		private Task.Context acceptContext;
 		private Client onConnect;
 		private long connectStart;
 		private int onConnectTimeout;
@@ -205,8 +206,10 @@ public class NetworkManager implements Closeable {
 		private Task.Context writeContext;
 		
 		public void set(int ops, Listener listener, int timeout, Exception stack, Task.Context context) {
-			if ((ops & SelectionKey.OP_ACCEPT) != 0)
+			if ((ops & SelectionKey.OP_ACCEPT) != 0) {
 				onAccept = (Server)listener;
+				acceptContext = context;
+			}
 			if ((ops & SelectionKey.OP_CONNECT) != 0) {
 				onConnect = (Client)listener;
 				onConnectTimeout = timeout;
@@ -235,6 +238,7 @@ public class NetworkManager implements Closeable {
 		
 		public void reset() {
 			onAccept = null;
+			acceptContext = null;
 			onConnect =  null;
 			onConnectTimeout = 0;
 			connectStack = null;
@@ -250,7 +254,7 @@ public class NetworkManager implements Closeable {
 		}
 		
 		public void channelClosed() {
-			if (onAccept != null) NetworkManager.channelClosed(onAccept, null);
+			if (onAccept != null) NetworkManager.channelClosed(onAccept, acceptContext);
 			if (onConnect != null) NetworkManager.channelClosed(onConnect, connectContext);
 			if (onRead != null) NetworkManager.channelClosed(onRead, readContext);
 			if (onWrite != null) NetworkManager.channelClosed(onWrite, writeContext);
@@ -359,9 +363,9 @@ public class NetworkManager implements Closeable {
 							Server server = listeners.onAccept;
 							try {
 								SocketChannel client = ((ServerSocketChannel)key.channel()).accept();
-								acceptClient(server, client);
+								acceptClient(server, client, listeners.acceptContext);
 							} catch (Exception e) {
-								acceptError(server, e);
+								acceptError(server, e, listeners.acceptContext);
 							}
 						}
 						if ((ops & SelectionKey.OP_CONNECT) != 0) {
@@ -513,7 +517,7 @@ public class NetworkManager implements Closeable {
 				try {
 					if ((conflict & SelectionKey.OP_ACCEPT) != 0)
 						acceptError((Server)req.listener,
-							new IOException("Already registered for accept operation"));
+							new IOException("Already registered for accept operation"), req.context);
 					if ((conflict & SelectionKey.OP_CONNECT) != 0)
 						connectionFailed((Client)req.listener, req.context,
 							new IOException("Already registered for connect operation"));
@@ -619,8 +623,8 @@ public class NetworkManager implements Closeable {
 			catch (Exception t) { /* ignore */ }
 		}
 		
-		private void acceptClient(Server server, SocketChannel client) {
-			Task.cpu("Accept network client", Task.Priority.NORMAL, t -> {
+		private void acceptClient(Server server, SocketChannel client, Task.Context context) {
+			Task.cpu("Accept network client", Task.Priority.NORMAL, context, t -> {
 				try {
 					InetSocketAddress addr = (InetSocketAddress)client.getRemoteAddress();
 					if (!blacklist.acceptAddress(addr.getAddress())) {
@@ -641,8 +645,8 @@ public class NetworkManager implements Closeable {
 		}
 		
 		
-		private void acceptError(Server server, Throwable error) {
-			Task.cpu("Call Server.acceptError", Task.Priority.RATHER_LOW, t -> {
+		private void acceptError(Server server, Throwable error, Task.Context context) {
+			Task.cpu("Call Server.acceptError", Task.Priority.RATHER_LOW, context, t -> {
 				server.acceptError(IO.error(error));
 				return null;
 			}).start();
