@@ -481,7 +481,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 	 * Return a BufferedReceiver associated with this client.
 	 * The BufferedReceiver is instantiated on the first call to this method.
 	 * Once this method has been called, the method receiveData MUST NOT be used anymore,
-	 * because some data may have been already receivedand bufferized into the BufferedReceiver.
+	 * because some data may have been already received and bufferized into the BufferedReceiver.
 	 */
 	public BufferedReceiver getReceiver() {
 		BufferedReceiver br = (BufferedReceiver)getAttribute(BUFFERED_RECEIVER_ATTRIBUTE);
@@ -555,6 +555,12 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 						p.getValue2().unblock();
 					continue;
 				}
+				if (manager.getDataLogger().trace()) {
+					StringBuilder trace = new StringBuilder(p.getValue1().remaining() * 4);
+					trace.append("TCPClient: Sending to server ").append(channel).append(":\n");
+					DebugUtil.dumpHex(trace, p.getValue1());
+					manager.traceData(trace);
+				}
 				int sent = 0;
 				do {
 					try {
@@ -627,13 +633,7 @@ public class TCPClient extends AbstractAttributesContainer implements TCPRemote 
 				}
 				allEmpty = false;
 				if (logger.debug())
-					logger.debug("Sending data to " + channel + ": " + data.remaining());
-				if (data.hasArray() && manager.getDataLogger().trace()) {
-					StringBuilder s = new StringBuilder(data.remaining() * 4);
-					s.append("TCPClient: Data to send to server:\r\n");
-					DebugUtil.dumpHex(s, data.array(), data.arrayOffset() + data.position(), data.remaining());
-					manager.traceData(s);
-				}
+					logger.debug("Data to " + channel + ": " + data.remaining());
 				toSend.addLast(new Pair<>(data, it.hasNext() ? null : sp));
 			} while (it.hasNext());
 			if (allEmpty) {

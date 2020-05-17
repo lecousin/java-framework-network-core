@@ -13,7 +13,6 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 
 import net.lecousin.framework.log.LoggerFactory;
-import net.lecousin.framework.network.NetworkManager;
 
 /** Configuration to connect using SSL. */
 public class SSLConnectionConfig {

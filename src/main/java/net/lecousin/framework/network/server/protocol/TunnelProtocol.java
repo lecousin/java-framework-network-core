@@ -48,7 +48,7 @@ public class TunnelProtocol implements ServerProtocol {
 	public static final String ATTRIBUTE_TUNNEL = "tunnelProtocol.remote";
 	public static final String ATTRIBUTE_LAST_SEND = "tunnelProtocol.lastSend";
 	
-	/** Start tunnelling between the given client, and the given connected remote side. */
+	/** Start tunneling between the given client, and the given connected remote side. */
 	public void registerClient(TCPServerClient client, TCPClient tunnel) {
 		client.setAttribute(ATTRIBUTE_TUNNEL, tunnel);
 		client.setAttribute(ATTRIBUTE_LAST_SEND, new Async<>(true));
